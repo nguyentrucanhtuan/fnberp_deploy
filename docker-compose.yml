@@ -1,20 +1,43 @@
 # ─────────────────────────────────────────────────────────────
-# TRCF ERP — BẢN GIAO KHÁCH (kéo ảnh từ GHCR private — KHÔNG source/Dockerfile)
+# TRCF ERP — BẢN GIAO KHÁCH (ảnh GHCR private + Postgres chạy bằng Docker)
 # Cài tự động: ./install.sh   (xem README.md)
-# DB = Postgres (Neon hoặc DB của khách) qua DATABASE_URL — không chạy trong Docker.
+# Stack TỰ-CHỨA: frontend + backend + Postgres — KHÔNG cần Neon/DB ngoài.
+# Dữ liệu nằm ở volume "pgdata" (nhớ sao lưu — xem README).
 # ─────────────────────────────────────────────────────────────
 name: trcf-erp
 
 services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:-trcf}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD bắt buộc — đặt trong .env}
+      POSTGRES_DB: ${DB_NAME:-trcf_erp}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    # KHÔNG publish cổng 5432 ra host — chỉ dùng nội bộ mạng compose (an toàn hơn).
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-trcf} -d ${DB_NAME:-trcf_erp}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
   backend:
     image: ghcr.io/nguyentrucanhtuan/trcf-erp-backend:${IMAGE_TAG:-latest}
     pull_policy: always                  # luôn lấy bản mới nhất khi up
     restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
     ports:
       - "${BACKEND_PORT:-3333}:3333"
     environment:
       PORT: 3333
-      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL bắt buộc}
+      # DATABASE_URL tự dựng từ DB_* → trỏ Postgres nội bộ (không sslmode → backend tự tắt SSL).
+      # Muốn dùng DB NGOÀI (Neon...): thay cả dòng dưới bằng chuỗi của bạn (cloud cần ?sslmode=require).
+      DATABASE_URL: postgresql://${DB_USER:-trcf}:${DB_PASSWORD:?DB_PASSWORD bắt buộc}@postgres:5432/${DB_NAME:-trcf_erp}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET bắt buộc — openssl rand -hex 32}
       JWT_EXPIRES: ${JWT_EXPIRES:-8h}
       ADMIN_SEED_EMAIL: ${ADMIN_SEED_EMAIL:?ADMIN_SEED_EMAIL bắt buộc}
@@ -53,3 +76,6 @@ services:
       timeout: 5s
       retries: 5
       start_period: 20s
+
+volumes:
+  pgdata:

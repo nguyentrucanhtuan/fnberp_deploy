@@ -34,7 +34,7 @@ echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin \
 if [ ! -f .env ]; then
   cp .env.example .env
   say "Đã tạo .env từ mẫu."
-  err "HÃY MỞ .env điền: DATABASE_URL, JWT_SECRET, AUTH_SECRET, ADMIN_SEED_EMAIL/PASSWORD"
+  err "HÃY MỞ .env điền: DB_PASSWORD, JWT_SECRET, AUTH_SECRET, ADMIN_SEED_EMAIL/PASSWORD"
   err "Gợi ý sinh khoá:  openssl rand -hex 32"
   err "Điền xong chạy lại: ./install.sh"
   exit 0
