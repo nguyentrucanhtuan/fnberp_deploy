@@ -1,0 +1,8 @@
+# Cấu hình thật của khách (chứa DATABASE_URL, JWT_SECRET, AUTH_SECRET...) — KHÔNG commit
+.env
+.env.*
+!.env.example
+
+# Rác hệ điều hành
+.DS_Store
+Thumbs.db

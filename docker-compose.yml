@@ -1,0 +1,55 @@
+# ─────────────────────────────────────────────────────────────
+# TRCF ERP — BẢN GIAO KHÁCH (kéo ảnh từ GHCR private — KHÔNG source/Dockerfile)
+# Cài tự động: ./install.sh   (xem README.md)
+# DB = Postgres (Neon hoặc DB của khách) qua DATABASE_URL — không chạy trong Docker.
+# ─────────────────────────────────────────────────────────────
+name: trcf-erp
+
+services:
+  backend:
+    image: ghcr.io/nguyentrucanhtuan/trcf-erp-backend:${IMAGE_TAG:-latest}
+    pull_policy: always                  # luôn lấy bản mới nhất khi up
+    restart: unless-stopped
+    ports:
+      - "${BACKEND_PORT:-3333}:3333"
+    environment:
+      PORT: 3333
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL bắt buộc}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET bắt buộc — openssl rand -hex 32}
+      JWT_EXPIRES: ${JWT_EXPIRES:-8h}
+      ADMIN_SEED_EMAIL: ${ADMIN_SEED_EMAIL:?ADMIN_SEED_EMAIL bắt buộc}
+      ADMIN_SEED_PASSWORD: ${ADMIN_SEED_PASSWORD:?ADMIN_SEED_PASSWORD bắt buộc}
+      APP_URL: ${APP_URL:-http://localhost:3000}
+      MAIL_DRIVER: ${MAIL_DRIVER:-log}
+      MAIL_FROM: ${MAIL_FROM:-onboarding@resend.dev}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      LLM_PROVIDER: ${LLM_PROVIDER:-gemini}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
+      ZALO_APP_SECRET: ${ZALO_APP_SECRET:-}
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:3333/auth/login',r=>process.exit(0)).on('error',()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+
+  frontend:
+    image: ghcr.io/nguyentrucanhtuan/trcf-erp-frontend:${IMAGE_TAG:-latest}
+    pull_policy: always
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+    environment:
+      API_URL: http://backend:3333
+      AUTH_SECRET: ${AUTH_SECRET:?AUTH_SECRET bắt buộc — openssl rand -hex 32}
+      AUTH_TRUST_HOST: "true"
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:3000/',r=>process.exit(0)).on('error',()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
