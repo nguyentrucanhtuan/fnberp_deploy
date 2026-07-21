@@ -26,7 +26,9 @@ Chờ 3–5 phút, script tự in ra địa chỉ + tài khoản + mật khẩu.
 
 **④ Bàn giao**
 - Chỉ khách mở địa chỉ đó trên máy thu ngân / tablet / điện thoại (cùng wifi)
-- **Bắt khách đổi mật khẩu quản trị ngay**
+- Mật khẩu quản trị là mặc định `1234567890@` (quy ước chung với khách), đổi được
+  trong mục Tài khoản. Riêng quán cài kèm `--domain` (mở ra internet) thì nên đổi,
+  vì mật khẩu mặc định nằm trong `install/ubuntu.sh` của repo công khai.
 - Bật sao lưu tự động (README §7) — làm luôn, đừng để "hôm sau"
 - Đưa khách file [README.md](README.md) làm sổ tay vận hành
 

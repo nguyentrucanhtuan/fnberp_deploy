@@ -23,7 +23,7 @@
 #   --domain erp.quan.vn      dùng domain thật + tự cấp HTTPS (Let's Encrypt)
 #   --dir /duong/dan          thư mục cài (mặc định ~/fnberp)
 #   --admin-email a@b.vn      email quản trị (mặc định admin@trcf.vn)
-#   --admin-password 'xxx'    mật khẩu quản trị (mặc định sinh ngẫu nhiên)
+#   --admin-password 'xxx'    mật khẩu quản trị (mặc định theo quy ước nhà cung cấp)
 #   --http-port 8080          đổi cổng HTTP nếu 80 đã bị chiếm
 #   --tag v1.2.3              cài đúng phiên bản ảnh (mặc định latest)
 #   --update                  chỉ cập nhật bản mới, giữ nguyên .env + dữ liệu
@@ -40,6 +40,9 @@ RAW_BASE="${TRCF_RAW_BASE:-https://raw.githubusercontent.com/nguyentrucanhtuan/f
 INSTALL_DIR="${TRCF_DIR:-$HOME/fnberp}"
 DOMAIN=""
 ADMIN_EMAIL="admin@trcf.vn"
+# Mật khẩu quản trị mặc định — quy ước cố định giữa nhà cung cấp và khách.
+# Ghi đè cho khách cần riêng: --admin-password 'xxx'.
+ADMIN_PASSWORD_DEFAULT='1234567890@'
 ADMIN_PASSWORD=""
 HTTP_PORT="80"
 HTTPS_PORT="443"
@@ -199,7 +202,7 @@ if [ -f .env ]; then
   fi
 else
   KEPT_ENV="no"
-  [ -n "$ADMIN_PASSWORD" ] || ADMIN_PASSWORD="$(openssl rand -base64 18 | tr -dc 'A-Za-z0-9' | cut -c1-14)"
+  [ -n "$ADMIN_PASSWORD" ] || ADMIN_PASSWORD="$ADMIN_PASSWORD_DEFAULT"
   umask 077
   cat > .env <<EOF
 # TRCF ERP — sinh tự động bởi install/ubuntu.sh lúc $(date '+%F %T')
@@ -349,7 +352,8 @@ Lệnh thường dùng (chạy trong $INSTALL_DIR):
   docker compose down          # dừng (GIỮ dữ liệu)
   docker compose up -d         # chạy lại
 
-⚠️  Đổi mật khẩu quản trị ngay sau lần đăng nhập đầu.
+Mật khẩu trên là mật khẩu mặc định — đổi được bất cứ lúc nào trong mục Tài khoản.
+
 ⚠️  ĐỪNG chạy 'docker compose down -v' — cờ -v xoá sạch dữ liệu.
 EOF
 chmod 600 "$CRED_FILE"
@@ -369,7 +373,7 @@ printf '  Mật khẩu         \033[1m%s\033[0m\n' "$ADMIN_PASSWORD"
 fi
 printf '\n  Đã lưu tại       %s\n' "$CRED_FILE"
 printf '  Thư mục cài      %s\n' "$INSTALL_DIR"
-printf '\n  \033[1;33mĐổi mật khẩu ngay sau lần đăng nhập đầu tiên.\033[0m\n'
+printf '\n  \033[0;90mMật khẩu mặc định — đổi được trong mục Tài khoản.\033[0m\n'
 if [ "$NEED_RELOGIN" = "yes" ]; then
 printf '  \033[1;33mĐăng xuất/đăng nhập lại (hoặc: newgrp docker) để dùng lệnh docker không cần sudo.\033[0m\n'
 fi

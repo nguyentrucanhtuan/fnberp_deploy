@@ -49,10 +49,13 @@ Kết thúc, màn hình hiện:
 
   Mở trình duyệt   http://192.168.1.50
   Tài khoản        admin@trcf.vn
-  Mật khẩu         Kx7pQm2ZvL9a
+  Mật khẩu         ••••••••••
 ```
 
-Mở đúng địa chỉ đó và đăng nhập. **Đổi mật khẩu ngay sau lần đăng nhập đầu.**
+Mở đúng địa chỉ đó và đăng nhập.
+
+> Mật khẩu in ra là mật khẩu **mặc định** do nhà cung cấp quy ước. Muốn đổi:
+> đăng nhập → menu tài khoản → **Đổi mật khẩu**.
 
 > Thông tin trên cũng được lưu ở `~/fnberp/thong-tin-dang-nhap.txt` (chỉ chủ máy đọc được).
 
@@ -95,7 +98,7 @@ curl -fsSL <url> | GHCR_TOKEN=<token> bash -s -- --http-port 8080
 | `--ghcr-token <token>` | Token tải phần mềm (thay cho `GHCR_TOKEN=`; đặt qua biến môi trường an toàn hơn vì không lưu vào lịch sử lệnh) |
 | `--domain <tên-miền>` | Dùng domain thật + tự cấp/gia hạn HTTPS (Let's Encrypt) |
 | `--admin-email <email>` | Email quản trị (mặc định `admin@trcf.vn`) |
-| `--admin-password <mk>` | Mật khẩu quản trị (mặc định sinh ngẫu nhiên) |
+| `--admin-password <mk>` | Mật khẩu quản trị (mặc định theo quy ước nhà cung cấp) |
 | `--dir <đường-dẫn>` | Thư mục cài (mặc định `~/fnberp`) |
 | `--http-port <số>` | Đổi cổng HTTP (mặc định 80) |
 | `--tag <phiên-bản>` | Cài đúng một phiên bản (mặc định `latest`) |
