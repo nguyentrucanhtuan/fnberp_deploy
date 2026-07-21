@@ -5,6 +5,38 @@ phải làm một lần** để lệnh cài một dòng chạy được.
 
 ---
 
+## 0. Giao một khách mới — checklist 5 phút
+
+**① Tạo token cho khách** → https://github.com/settings/tokens/new
+- Note: tên khách (vd `TRCF — Quán Mimosa`) · Expiration: **No expiration**
+- Scopes: ✅ **`read:packages`** — **CHỈ ô này**, tuyệt đối không tick `repo`
+- Bấm *Generate token*, copy chuỗi `ghp_…` (chỉ hiện một lần)
+
+**② Chuẩn bị máy chủ của quán**
+- Ubuntu 22.04/24.04 · 2 CPU · 4 GB RAM · 20 GB đĩa
+- Cắm dây/wifi **cùng mạng** với máy thu ngân + tablet bếp
+- Đặt **IP tĩnh** (hoặc DHCP reservation ở router) — nếu không, mai IP đổi là mọi máy mất kết nối
+
+**③ Gửi khách đúng một lệnh** (đã điền sẵn token):
+```bash
+cd ~ && curl -fsSL https://raw.githubusercontent.com/nguyentrucanhtuan/fnberp_deploy/main/install/ubuntu.sh \
+  | GHCR_TOKEN=ghp_xxxxxxxxxxxx bash
+```
+Chờ 3–5 phút, script tự in ra địa chỉ + tài khoản + mật khẩu.
+
+**④ Bàn giao**
+- Chỉ khách mở địa chỉ đó trên máy thu ngân / tablet / điện thoại (cùng wifi)
+- **Bắt khách đổi mật khẩu quản trị ngay**
+- Bật sao lưu tự động (README §7) — làm luôn, đừng để "hôm sau"
+- Đưa khách file [README.md](README.md) làm sổ tay vận hành
+
+**⑤ Ghi lại** khách nào dùng token nào (để sau này thu hồi đúng cái cần).
+
+Có domain riêng thì thêm `--domain erp.quan.vn` vào cuối lệnh ③ (DNS phải trỏ về IP
+máy chủ trước, và cổng 80/443 phải mở ra internet) — Caddy tự cấp HTTPS.
+
+---
+
 ## 1. Kiến trúc bản giao khách
 
 ```
