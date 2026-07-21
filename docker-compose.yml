@@ -1,12 +1,35 @@
-# ─────────────────────────────────────────────────────────────
-# TRCF ERP — BẢN GIAO KHÁCH (ảnh GHCR private + Postgres chạy bằng Docker)
-# Cài tự động: ./install.sh   (xem README.md)
-# Stack TỰ-CHỨA: frontend + backend + Postgres — KHÔNG cần Neon/DB ngoài.
-# Dữ liệu nằm ở volume "pgdata" (nhớ sao lưu — xem README).
-# ─────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────
+# TRCF ERP — BẢN GIAO KHÁCH (ảnh dựng sẵn trên GHCR, tự-chứa hoàn toàn)
+#
+# Cài tự động 1 lệnh:
+#   curl -fsSL https://raw.githubusercontent.com/nguyentrucanhtuan/fnberp_deploy/main/install/ubuntu.sh | bash
+#
+# 4 service: caddy (cổng vào) → frontend + backend → postgres.
+# CHỈ caddy publish cổng ra ngoài; backend/postgres nằm trong mạng nội bộ Docker.
+# Dữ liệu ở volume "pgdata" — NHỚ SAO LƯU (xem README), và ĐỪNG dùng `down -v`.
+# ─────────────────────────────────────────────────────────────────────────
 name: trcf-erp
 
 services:
+  # ── Cổng vào duy nhất: gộp frontend + backend về một origin, tự cấp HTTPS ──
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      frontend:
+        condition: service_healthy
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+    environment:
+      # ":80" = HTTP trong LAN · "erp.quan.vn" = domain thật + HTTPS tự động
+      SITE_ADDRESS: ${SITE_ADDRESS:-:80}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+  # ── Cơ sở dữ liệu (không publish cổng — chỉ nội bộ) ──
   postgres:
     image: postgres:17-alpine
     restart: unless-stopped
@@ -16,7 +39,6 @@ services:
       POSTGRES_DB: ${DB_NAME:-trcf_erp}
     volumes:
       - pgdata:/var/lib/postgresql/data
-    # KHÔNG publish cổng 5432 ra host — chỉ dùng nội bộ mạng compose (an toàn hơn).
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-trcf} -d ${DB_NAME:-trcf_erp}"]
       interval: 10s
@@ -24,25 +46,28 @@ services:
       retries: 10
       start_period: 20s
 
+  # ── API NestJS: migration + seed quản trị/nhóm quyền chạy tự động lúc boot ──
   backend:
     image: ghcr.io/nguyentrucanhtuan/trcf-erp-backend:${IMAGE_TAG:-latest}
-    pull_policy: always                  # luôn lấy bản mới nhất khi up
+    pull_policy: always
     restart: unless-stopped
     depends_on:
       postgres:
         condition: service_healthy
-    ports:
-      - "${BACKEND_PORT:-3333}:3333"
+    # Không publish cổng: caddy đã proxy /socket.io/* và /shop/*, frontend gọi nội bộ.
+    # Cần gọi API trực tiếp để thử nghiệm? bỏ chú thích 2 dòng dưới:
+    # ports:
+    #   - "${BACKEND_PORT:-3333}:3333"
     environment:
       PORT: 3333
-      # DATABASE_URL tự dựng từ DB_* → trỏ Postgres nội bộ (không sslmode → backend tự tắt SSL).
-      # Muốn dùng DB NGOÀI (Neon...): thay cả dòng dưới bằng chuỗi của bạn (cloud cần ?sslmode=require).
+      # Trỏ Postgres nội bộ (không sslmode → backend tự tắt SSL).
+      # Muốn dùng DB ngoài (Neon…): thay cả dòng này bằng chuỗi của bạn (+ ?sslmode=require).
       DATABASE_URL: postgresql://${DB_USER:-trcf}:${DB_PASSWORD:?DB_PASSWORD bắt buộc}@postgres:5432/${DB_NAME:-trcf_erp}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET bắt buộc — openssl rand -hex 32}
       JWT_EXPIRES: ${JWT_EXPIRES:-8h}
       ADMIN_SEED_EMAIL: ${ADMIN_SEED_EMAIL:?ADMIN_SEED_EMAIL bắt buộc}
       ADMIN_SEED_PASSWORD: ${ADMIN_SEED_PASSWORD:?ADMIN_SEED_PASSWORD bắt buộc}
-      APP_URL: ${APP_URL:-http://localhost:3000}
+      APP_URL: ${APP_URL:-http://localhost}
       MAIL_DRIVER: ${MAIL_DRIVER:-log}
       MAIL_FROM: ${MAIL_FROM:-onboarding@resend.dev}
       RESEND_API_KEY: ${RESEND_API_KEY:-}
@@ -51,12 +76,14 @@ services:
       GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
       ZALO_APP_SECRET: ${ZALO_APP_SECRET:-}
     healthcheck:
+      # Bất kỳ HTTP response nào = process sống. start_period chờ migration chạy xong.
       test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:3333/auth/login',r=>process.exit(0)).on('error',()=>process.exit(1))"]
       interval: 30s
       timeout: 5s
       retries: 5
       start_period: 60s
 
+  # ── Giao diện Next.js (BFF /api gắn Bearer, token httpOnly) ──
   frontend:
     image: ghcr.io/nguyentrucanhtuan/trcf-erp-frontend:${IMAGE_TAG:-latest}
     pull_policy: always
@@ -64,11 +91,11 @@ services:
     depends_on:
       backend:
         condition: service_healthy
-    ports:
-      - "${FRONTEND_PORT:-3000}:3000"
     environment:
+      # BFF gọi backend qua mạng nội bộ Docker — không lộ ra ngoài.
       API_URL: http://backend:3333
       AUTH_SECRET: ${AUTH_SECRET:?AUTH_SECRET bắt buộc — openssl rand -hex 32}
+      # Bắt buộc khi chạy sau reverse-proxy để NextAuth tin host thật.
       AUTH_TRUST_HOST: "true"
     healthcheck:
       test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:3000/',r=>process.exit(0)).on('error',()=>process.exit(1))"]
@@ -79,3 +106,5 @@ services:
 
 volumes:
   pgdata:
+  caddy_data:
+  caddy_config:

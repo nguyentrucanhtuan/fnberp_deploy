@@ -1,0 +1,43 @@
+# ─────────────────────────────────────────────────────────────────────────
+# TRCF ERP — reverse proxy (Caddy)
+#
+# Gộp frontend + backend về MỘT cổng duy nhất (80, hoặc 443 khi có domain):
+#   • /socket.io/*  → backend  (WebSocket màn bếp + màn khách — 045)
+#   • /shop/*       → backend  (BFF công khai cho Zalo Mini App — 046)
+#   • còn lại       → frontend (Next.js; API quản trị đi qua BFF /api có RBAC)
+#
+# Nhờ gộp một origin, trình duyệt trên tablet/điện thoại trong LAN chỉ cần biết
+# ĐÚNG MỘT địa chỉ — không phải cấu hình IP backend riêng, không dính CORS.
+#
+# SITE_ADDRESS (đặt trong .env):
+#   :80              → HTTP thuần, dùng trong mạng nội bộ (mặc định)
+#   erp.quan.vn      → Caddy TỰ xin + gia hạn chứng chỉ HTTPS (Let's Encrypt)
+# ─────────────────────────────────────────────────────────────────────────
+
+{
+	admin off
+}
+
+{$SITE_ADDRESS::80} {
+	encode zstd gzip
+
+	# Kênh real-time + BFF công khai → backend NestJS
+	@backend path /socket.io/* /shop/*
+	handle @backend {
+		reverse_proxy backend:3333
+	}
+
+	# Toàn bộ giao diện + BFF proxy /api (đã gắn Bearer, RBAC ở backend)
+	handle {
+		reverse_proxy frontend:3000
+	}
+
+	# Log gọn, giữ 3 file × 10MB
+	log {
+		output file /data/access.log {
+			roll_size 10MiB
+			roll_keep 3
+		}
+		format console
+	}
+}
