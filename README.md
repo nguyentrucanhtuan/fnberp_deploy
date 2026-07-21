@@ -73,6 +73,22 @@ Mở đúng địa chỉ đó và đăng nhập.
 
 > Thông tin trên cũng được lưu ở `~/fnberp/thong-tin-dang-nhap.txt` (chỉ chủ máy đọc được).
 
+### Quán đã có sẵn gì khi vừa cài xong
+
+Để bán được ngay mà không phải khai báo từ đầu, hệ thống tự tạo:
+
+| Mục | Có sẵn |
+|---|---|
+| Kho | **Kho tổng** (nhập hàng, nguyên liệu) · **Kho quầy** (trừ hàng khi bán) |
+| Thanh toán | **Tiền mặt** · **Chuyển khoản** · **Thẻ ngân hàng** |
+| Quầy bán hàng | **Quầy chính** (nhận cả 3 hình thức trên) |
+| Cấu hình | Kho bán/nhập/chế biến + phương thức tiền mặt cho sổ quỹ — đã trỏ đúng |
+| Nhân sự | Phòng ban **Vận hành** + hồ sơ **Quản lý** gắn sẵn tài khoản quản trị |
+
+Đổi tên, sửa hay xoá thoải mái — **hệ thống không tạo lại** những mục bạn đã xoá.
+Riêng nhân viên: mỗi người bán cần **một tài khoản riêng gắn hồ sơ nhân viên**
+(Nhân sự → Nhân viên), vì ai bán thì tự mở ca của người đó.
+
 ---
 
 ## 3. Dùng từ máy khác trong quán
