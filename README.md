@@ -23,17 +23,31 @@ tự sinh mật khẩu, tự khởi động. Bạn chỉ việc mở trình duy�
 
 ## 2. Cài đặt — một lệnh
 
-Đăng nhập vào máy chủ (trực tiếp hoặc qua SSH), dán lệnh sau — **thay `<token>` bằng
-token nhà cung cấp đã gửi bạn**:
+Đăng nhập vào máy chủ (trực tiếp hoặc qua SSH). Cài **2 bước**, dán lần lượt —
+thay `<token>` bằng token nhà cung cấp đã gửi bạn.
+
+**Bước 1 — cài Docker** (bỏ qua nếu máy đã có sẵn):
 
 ```bash
-cd ~ && curl -fsSL https://raw.githubusercontent.com/nguyentrucanhtuan/fnberp_deploy/main/install/ubuntu.sh \
+curl -fsSL https://raw.githubusercontent.com/nguyentrucanhtuan/fnberp_deploy/main/install/docker.sh | bash
+```
+
+**Bước 2 — cài TRCF ERP:**
+
+```bash
+cd ~ && curl -fsSL https://raw.githubusercontent.com/nguyentrucanhtuan/fnberp_deploy/main/install/erp.sh \
   | GHCR_TOKEN=<token> bash
 ```
 
+> Muốn gọn hơn thì chạy **một lệnh duy nhất** thay cho cả 2 bước trên:
+> ```bash
+> cd ~ && curl -fsSL https://raw.githubusercontent.com/nguyentrucanhtuan/fnberp_deploy/main/install/ubuntu.sh \
+>   | GHCR_TOKEN=<token> bash
+> ```
+
 Chờ **3–5 phút**. Script tự động:
 
-1. Cài **Docker Engine + Docker Compose** (từ repo chính thức của Docker)
+1. Cài **Docker Engine + Docker Compose** (từ repo chính thức của Docker) — bước 1
 2. Dùng token để **tải phần mềm** về
 3. Tải bộ cấu hình về **`~/fnberp`**
 4. Sinh **`.env`** — mật khẩu database, `JWT_SECRET`, `AUTH_SECRET` đều ngẫu nhiên, mỗi máy một giá trị

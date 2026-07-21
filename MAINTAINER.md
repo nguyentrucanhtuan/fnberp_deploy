@@ -17,12 +17,20 @@ phải làm một lần** để lệnh cài một dòng chạy được.
 - Cắm dây/wifi **cùng mạng** với máy thu ngân + tablet bếp
 - Đặt **IP tĩnh** (hoặc DHCP reservation ở router) — nếu không, mai IP đổi là mọi máy mất kết nối
 
-**③ Gửi khách đúng một lệnh** (đã điền sẵn token):
+**③ Gửi khách lệnh cài** (đã điền sẵn token) — 2 bước, hoặc gộp làm một:
 ```bash
-cd ~ && curl -fsSL https://raw.githubusercontent.com/nguyentrucanhtuan/fnberp_deploy/main/install/ubuntu.sh \
+# Bước 1 — Docker
+curl -fsSL https://raw.githubusercontent.com/nguyentrucanhtuan/fnberp_deploy/main/install/docker.sh | bash
+
+# Bước 2 — ERP
+cd ~ && curl -fsSL https://raw.githubusercontent.com/nguyentrucanhtuan/fnberp_deploy/main/install/erp.sh \
   | GHCR_TOKEN=ghp_xxxxxxxxxxxx bash
 ```
 Chờ 3–5 phút, script tự in ra địa chỉ + tài khoản + mật khẩu.
+
+Tách 2 bước để khi có sự cố biết ngay hỏng ở đâu (cài Docker vs cài ERP), và
+máy nào sẵn Docker thì bỏ qua bước 1. Muốn một lệnh: dùng `install/ubuntu.sh`
+(chỉ là lớp gọi lần lượt 2 script trên).
 
 **④ Bàn giao**
 - Chỉ khách mở địa chỉ đó trên máy thu ngân / tablet / điện thoại (cùng wifi)
