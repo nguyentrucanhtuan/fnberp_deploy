@@ -11,6 +11,7 @@ tự sinh mật khẩu, tự khởi động. Bạn chỉ việc mở trình duy�
 | | |
 |---|---|
 | **Máy chủ** | Ubuntu 22.04 / 24.04 (hoặc Debian 12). Máy tính cũ, NUC mini, hay VPS đều được. |
+| **Vi xử lý (CPU)** | **x86_64 / amd64** — hầu hết PC, laptop, NUC, VPS đều loại này (kiểm tra: gõ `uname -m`, thấy `x86_64` là đúng). Máy chip **ARM** (`aarch64`/`arm64` — vài VPS ARM giá rẻ, Raspberry Pi, một số mini-PC) **chưa dùng được**. |
 | **Cấu hình tối thiểu** | 2 CPU · 4 GB RAM · 20 GB ổ cứng |
 | **Mạng** | Máy chủ cắm **cùng wifi/mạng LAN** với máy thu ngân, tablet màn bếp |
 | **Quyền** | Tài khoản có `sudo` |
@@ -18,6 +19,9 @@ tự sinh mật khẩu, tự khởi động. Bạn chỉ việc mở trình duy�
 
 > Nên đặt **IP tĩnh** cho máy chủ (hoặc cấu hình DHCP reservation trên router) để địa chỉ
 > truy cập không đổi sau khi khởi động lại.
+
+> **Chưa biết máy thuộc loại nào?** Gõ `uname -m` trên máy chủ: kết quả `x86_64` là dùng được;
+> `aarch64` hoặc `arm64` thì báo nhà cung cấp (cần bản phần mềm cho ARM).
 
 ---
 
@@ -31,6 +35,11 @@ thay `<token>` bằng token nhà cung cấp đã gửi bạn.
 ```bash
 curl -fsSL https://raw.githubusercontent.com/nguyentrucanhtuan/fnberp_deploy/main/install/docker.sh | bash
 ```
+
+> Lệnh này **không cần token** (Docker là phần mềm miễn phí, công khai). Nó cài **Docker Engine +
+> Docker Compose** từ **kho chính thức của Docker**, bật dịch vụ tự chạy, rồi thêm tài khoản của bạn
+> vào nhóm `docker` (để lần sau gõ `docker` không cần `sudo`). Máy đã có Docker thì script tự bỏ qua.
+> Cài xong nếu được nhắc, **đăng xuất/đăng nhập lại** một lần (hoặc gõ `newgrp docker`).
 
 **Bước 2 — cài TRCF ERP:**
 
@@ -244,6 +253,7 @@ không truy cập trực tiếp từ ngoài được.
 | `docker: permission denied` | Đăng xuất/đăng nhập lại, hoặc `newgrp docker` |
 | `Chưa có quyền tải phần mềm` | Thiếu token → chạy lại kèm `GHCR_TOKEN=<token>` |
 | `Token không hợp lệ hoặc đã bị thu hồi` | Token hết hạn/bị thu hồi → xin nhà cung cấp token mới |
+| `no matching manifest for linux/arm64` | Máy chạy chip **ARM** — bản phần mềm hiện chỉ cho **x86_64/amd64** (kiểm tra: `uname -m`). Dùng máy chủ x86_64, hoặc báo nhà cung cấp cần bản ARM. |
 
 Cần hỗ trợ: gửi kèm kết quả của
 
