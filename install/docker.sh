@@ -46,7 +46,7 @@ if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; 
 else
   info "Cài từ repo chính thức của Docker (mất 1–2 phút)…"
   $SUDO apt-get update -qq
-  $SUDO DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+  $SUDO env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
     ca-certificates curl gnupg >/dev/null
 
   $SUDO install -m 0755 -d /etc/apt/keyrings
@@ -64,7 +64,7 @@ else
   ok "Đã thêm repo Docker ($DOCKER_REPO_ID $CODENAME)"
 
   $SUDO apt-get update -qq
-  $SUDO DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+  $SUDO env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
     docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin >/dev/null
   ok "Đã cài $(docker --version | cut -d, -f1)"
 fi

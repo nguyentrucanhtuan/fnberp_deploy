@@ -108,7 +108,7 @@ if [ -n "${MISSING:-}" ]; then
   info "Cài gói còn thiếu:${MISSING}"
   $SUDO apt-get update -qq
   # shellcheck disable=SC2086
-  $SUDO DEBIAN_FRONTEND=noninteractive apt-get install -y -qq $MISSING >/dev/null
+  $SUDO env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq $MISSING >/dev/null
 fi
 ok "Công cụ cơ bản sẵn sàng"
 
