@@ -169,9 +169,71 @@ quán đang dùng Windows mà chỉ có máy in USB thì tạm thời chưa in �
 
 ---
 
-### Cách 1 — Cài thẳng lên máy (khuyến nghị, Linux)
+### Cách 1 — Chạy bằng Docker: **một lệnh** (khuyến nghị, chỉ Linux)
 
-Nhẹ nhất và ít thứ hỏng nhất. Chương trình tự chạy lại sau khi mất điện.
+Gọn nhất, và cập nhật về sau cũng chỉ một lệnh. **Chỉ chạy được trên Linux**: Docker trên
+Windows/macOS nằm trong máy ảo không có cổng USB nào để cấp cho container.
+
+```bash
+cd ~ && curl -fsSL https://raw.githubusercontent.com/nguyentrucanhtuan/fnberp_deploy/main/install/print-agent.sh \
+  | GHCR_TOKEN=<token> sudo -E bash
+```
+
+Lệnh này tự làm hết: kiểm máy chạy được không → tải phần mềm → **tự dò máy in đang cắm** →
+ghi cấu hình vào `/opt/trcf-print-agent` → cài lệnh gọn `trcf-print-agent`.
+
+> Máy đã cài ERP thì thường **không cần token** — Docker đã đăng nhập sẵn từ lần cài đó.
+> Cứ chạy không có `GHCR_TOKEN=`, thiếu thì script sẽ tự nhắc.
+
+**Ghép nối là bước riêng** (script cố ý không làm hộ: mã ghép chỉ sống 10 phút, gộp vào lệnh
+cài thì phải lấy mã trước rồi mới dám chạy, lỡ tay là mã hết hạn giữa chừng):
+
+```bash
+# 1. Vào ERP → Máy in → Thêm máy in → chọn kết nối USB → lưu
+# 2. Menu ⋯ ở dòng vừa tạo → Lấy mã ghép (mã 6 số)
+# 3. Chạy trên máy quầy:
+sudo trcf-print-agent pair --server http://localhost --code <mã-6-số>
+
+# 4. Bật chạy nền:
+docker compose -f /opt/trcf-print-agent/docker-compose.yml up -d
+```
+
+Xong: cột **Kết nối in** ở màn *Máy in* phải chuyển sang **"Đang chạy"**.
+
+**Cắm thêm máy in thứ hai** (bếp, tem): chạy lại lệnh cài (nó dò cổng mới), rồi lặp bước 1–3
+với mã mới. Chương trình tự cầm thêm máy in đó, không phải cài lại.
+
+#### Cập nhật (Docker)
+
+```bash
+cd ~ && curl -fsSL https://raw.githubusercontent.com/nguyentrucanhtuan/fnberp_deploy/main/install/print-agent.sh \
+  | sudo -E bash
+```
+
+Đúng lệnh cài lúc đầu — chạy lại là tải bản mới, dò lại cổng máy in, rồi khởi động lại. Liên kết
+máy in **giữ nguyên**, không phải ghép lại.
+
+> **Máy in đổi cổng** (rút cắm lại dây, khởi động máy → số `lpN` nhảy) cũng chữa bằng đúng lệnh
+> này. Đó là lý do lệnh cài và lệnh cập nhật là một.
+
+#### Xem và gỡ (Docker)
+
+```bash
+docker compose -f /opt/trcf-print-agent/docker-compose.yml logs -f    # xem nhật ký
+trcf-print-agent list                                                # xem máy in đang cắm
+trcf-print-agent version                                             # đang chạy bản nào
+
+docker compose -f /opt/trcf-print-agent/docker-compose.yml down       # gỡ
+sudo rm -rf /opt/trcf-print-agent /usr/local/bin/trcf-print-agent
+sudo rm -rf /etc/trcf-print-agent      # xoá luôn liên kết → lần sau phải ghép lại
+```
+
+---
+
+### Cách 2 — Cài thẳng lên máy, không dùng Docker (Linux)
+
+Dành cho máy quầy không chạy Docker (ERP đặt ở máy khác), hoặc muốn nhẹ hết mức.
+Chương trình chạy bằng systemd, tự bật lại sau khi mất điện.
 
 **Bước 1 — lấy chương trình** (moi ra từ ảnh Docker, dùng đúng token đã cấp lúc cài ERP):
 
@@ -239,67 +301,6 @@ sudo systemctl disable --now trcf-print-agent
 sudo rm /etc/systemd/system/trcf-print-agent.service /usr/local/bin/trcf-print-agent
 sudo rm -rf /etc/trcf-print-agent          # xoá luôn liên kết → lần sau phải ghép lại
 sudo systemctl daemon-reload
-```
-
----
-
-### Cách 2 — Chạy bằng Docker (chỉ Linux)
-
-Hợp với quán muốn mọi thứ gói trong compose. **Chỉ chạy được trên Linux**: Docker trên
-Windows/macOS nằm trong một máy ảo không có cổng USB nào để cấp cho container.
-
-**Bước 1 — tìm đúng thiết bị máy in:**
-
-```bash
-ls /dev/usb/
-```
-
-Ghi lại tên, ví dụ `lp0`. ⚠️ **Con số này không cố định** — rút cắm lại dây hoặc khởi động máy là
-nó nhảy (đã gặp `lp4` ở một quán thật). Nhảy số thì phải sửa lại tệp dưới và `docker compose up -d`.
-
-**Bước 2 — tạo `~/print-agent/docker-compose.yml`:**
-
-```yaml
-services:
-  print-agent:
-    image: ghcr.io/nguyentrucanhtuan/trcf-print-agent:latest
-    container_name: trcf-print-agent
-    restart: unless-stopped
-    network_mode: host                     # để gọi được http://localhost (cổng 80)
-    devices:
-      - "/dev/usb/lp0:/dev/usb/lp0"        # sửa cho đúng máy · thêm dòng nếu 2 máy in
-    volumes:
-      - /etc/trcf-print-agent:/etc/trcf-print-agent
-```
-
-**Bước 3 — ghép** (lấy mã 6 số ở ERP như Cách 1, bước 3):
-
-```bash
-cd ~/print-agent
-docker compose run --rm print-agent pair   --server http://localhost --code <mã-6-số> --no-service
-```
-
-> `--no-service` là **bắt buộc** khi chạy bằng Docker: trong container không có systemd để cài
-> dịch vụ nền — `restart: unless-stopped` đã lo đúng việc đó rồi.
-
-**Bước 4 — chạy:**
-
-```bash
-docker compose up -d
-docker compose logs -f          # thấy "khởi động ... N máy in" là xong
-```
-
-#### Cập nhật (Docker)
-
-```bash
-cd ~/print-agent && docker compose pull && docker compose up -d
-```
-
-#### Gỡ (Docker)
-
-```bash
-cd ~/print-agent && docker compose down
-sudo rm -rf /etc/trcf-print-agent          # xoá luôn liên kết → lần sau phải ghép lại
 ```
 
 ---
