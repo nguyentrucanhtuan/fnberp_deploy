@@ -89,9 +89,21 @@ Thêm route public mới cho backend → bổ sung vào matcher `@backend`.
 
 ## 2. Việc phải làm MỘT LẦN
 
-### 2.1 Giữ 2 package GHCR ở chế độ **private** (quyết định đã chốt)
+### 2.1 Giữ 3 package GHCR ở chế độ **private** (quyết định đã chốt)
 
 Không cần làm gì trên GitHub — package mặc định private. **Đừng** chuyển sang public.
+
+| Package | Nguồn |
+|---|---|
+| `trcf-erp-backend` | repo `trcf_erp_backend`, push `main` |
+| `trcf-erp-frontend` | repo `trcf_erp_frontend`, push `main` |
+| **`trcf-print-agent`** | repo `trcf_print_agent`, push `main` (thêm 2026-08) |
+
+**Vì sao chương trình in cũng đi qua GHCR:** repo agent private và `dist/` bị gitignore, nên quán
+không có đường nào `curl` binary về. Đẩy ảnh lên GHCR thì họ dùng **đúng token đã cấp lúc cài
+ERP** — không phải phát sinh kênh phân phối thứ hai, không phải cấp thêm quyền. Một ảnh phục vụ
+cả hai kiểu cài: chạy thẳng bằng Docker, hoặc `docker cp` binary ra `/usr/local/bin` rồi chạy
+bằng systemd (README §5 hướng dẫn cả hai). Ảnh dựng **đa kiến trúc** amd64 + arm64.
 
 **Lý do:** `dist/` của backend là output `tsc`, **không minify**. Tên hàm, tên biến,
 toàn bộ luồng nghiệp vụ (engine sổ cái tiền, sổ cái kho, RBAC…) đọc được nguyên vẹn

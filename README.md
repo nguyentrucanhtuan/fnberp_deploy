@@ -145,7 +145,186 @@ curl -fsSL <url> | GHCR_TOKEN=<token> bash -s -- --http-port 8080
 
 ---
 
-## 5. Vận hành hằng ngày
+## 5. Máy in bill và phiếu bếp
+
+Có **hai loại máy in**, cách lắp khác hẳn nhau. Nhìn vào cổng cắm phía sau máy in là biết:
+
+| Máy in có | Phải cài gì | Vì sao |
+|---|---|---|
+| **Cổng mạng (LAN/Ethernet)** | **Không cài gì cả** | Máy chủ tự mở kết nối tới máy in. Chỉ cần vào ERP mục *Máy in* → Thêm → chọn **mạng** → nhập IP + cổng `9100`. |
+| **Chỉ có cổng USB** | **Chương trình in** (mục dưới) | Máy chủ chạy trong Docker, mà container không chạm được cổng USB của máy. Phải có một chương trình nhỏ chạy **ngoài** container làm cầu nối. |
+
+> **Máy in LAN dễ hơn hẳn.** Nếu đang chọn mua, chọn loại có cổng mạng thì bỏ qua được toàn bộ mục này.
+
+### Hệ điều hành nào chạy được chương trình in
+
+| Máy quầy chạy | Máy in USB | Máy in LAN |
+|---|---|---|
+| **Linux** (Ubuntu, Debian… · x86_64 hoặc ARM) | ✅ chạy đủ | ✅ (không cần chương trình in) |
+| **Windows** | ❌ **chưa hỗ trợ** | ✅ (không cần chương trình in) |
+| **macOS** | ❌ chưa hỗ trợ | ✅ (không cần chương trình in) |
+
+Windows và macOS chỉ dùng được máy in **LAN**. Máy in USB trên hai hệ này còn đang làm dở —
+quán đang dùng Windows mà chỉ có máy in USB thì tạm thời chưa in được, hãy báo nhà cung cấp.
+
+---
+
+### Cách 1 — Cài thẳng lên máy (khuyến nghị, Linux)
+
+Nhẹ nhất và ít thứ hỏng nhất. Chương trình tự chạy lại sau khi mất điện.
+
+**Bước 1 — lấy chương trình** (moi ra từ ảnh Docker, dùng đúng token đã cấp lúc cài ERP):
+
+```bash
+echo <token> | docker login ghcr.io -u nguyentrucanhtuan --password-stdin
+docker pull ghcr.io/nguyentrucanhtuan/trcf-print-agent:latest
+id=$(docker create ghcr.io/nguyentrucanhtuan/trcf-print-agent:latest)
+sudo docker cp $id:/usr/local/bin/trcf-print-agent /usr/local/bin/trcf-print-agent
+docker rm $id && sudo chmod +x /usr/local/bin/trcf-print-agent
+```
+
+**Bước 2 — xem máy in đã nhận chưa:**
+
+```bash
+trcf-print-agent list
+```
+
+Không thấy gì thì kiểm dây, và xem mục *Máy in không ra giấy* ở dưới.
+
+**Bước 3 — lấy mã ghép:** vào ERP mục *Máy in* → **Thêm máy in** → chọn kết nối **USB** → lưu →
+menu ⋯ của dòng vừa tạo → **Lấy mã ghép**. Được **mã 6 số**, dùng trong **10 phút**.
+
+**Bước 4 — ghép:**
+
+```bash
+sudo trcf-print-agent pair --server http://localhost --code <mã-6-số>
+```
+
+Lệnh này tự dò máy in, **in một tờ thử**, rồi cài dịch vụ chạy nền. Không ra giấy thì nó dừng
+ngay tại đó — không ghép bừa.
+
+> ⚠️ `--server http://localhost`, **không phải** `http://localhost:3333`. Máy chủ nằm trong
+> Docker và cổng 3333 cố ý không mở ra ngoài; chương trình in đi vào bằng cổng 80.
+>
+> Máy in cắm ở **máy khác** trong quán thì thay `localhost` bằng IP máy chủ, ví dụ
+> `--server http://192.168.1.50`.
+
+**Bước 5 — kiểm:** ở màn *Máy in*, cột **Kết nối in** phải chuyển sang **"Đang chạy"**. Trên máy:
+
+```bash
+systemctl status trcf-print-agent
+```
+
+**Cắm thêm máy in thứ hai** (bếp, tem): lặp lại bước 3–4 với mã mới. Chương trình tự cầm thêm
+máy in đó, **không** phải cài lại lần nữa.
+
+#### Cập nhật chương trình in
+
+```bash
+docker pull ghcr.io/nguyentrucanhtuan/trcf-print-agent:latest
+id=$(docker create ghcr.io/nguyentrucanhtuan/trcf-print-agent:latest)
+sudo systemctl stop trcf-print-agent
+sudo docker cp $id:/usr/local/bin/trcf-print-agent /usr/local/bin/trcf-print-agent
+docker rm $id
+sudo systemctl start trcf-print-agent
+trcf-print-agent version
+```
+
+Cấu hình và liên kết máy in **giữ nguyên** — không phải ghép lại.
+
+#### Gỡ ra
+
+```bash
+sudo systemctl disable --now trcf-print-agent
+sudo rm /etc/systemd/system/trcf-print-agent.service /usr/local/bin/trcf-print-agent
+sudo rm -rf /etc/trcf-print-agent          # xoá luôn liên kết → lần sau phải ghép lại
+sudo systemctl daemon-reload
+```
+
+---
+
+### Cách 2 — Chạy bằng Docker (chỉ Linux)
+
+Hợp với quán muốn mọi thứ gói trong compose. **Chỉ chạy được trên Linux**: Docker trên
+Windows/macOS nằm trong một máy ảo không có cổng USB nào để cấp cho container.
+
+**Bước 1 — tìm đúng thiết bị máy in:**
+
+```bash
+ls /dev/usb/
+```
+
+Ghi lại tên, ví dụ `lp0`. ⚠️ **Con số này không cố định** — rút cắm lại dây hoặc khởi động máy là
+nó nhảy (đã gặp `lp4` ở một quán thật). Nhảy số thì phải sửa lại tệp dưới và `docker compose up -d`.
+
+**Bước 2 — tạo `~/print-agent/docker-compose.yml`:**
+
+```yaml
+services:
+  print-agent:
+    image: ghcr.io/nguyentrucanhtuan/trcf-print-agent:latest
+    container_name: trcf-print-agent
+    restart: unless-stopped
+    network_mode: host                     # để gọi được http://localhost (cổng 80)
+    devices:
+      - "/dev/usb/lp0:/dev/usb/lp0"        # sửa cho đúng máy · thêm dòng nếu 2 máy in
+    volumes:
+      - /etc/trcf-print-agent:/etc/trcf-print-agent
+```
+
+**Bước 3 — ghép** (lấy mã 6 số ở ERP như Cách 1, bước 3):
+
+```bash
+cd ~/print-agent
+docker compose run --rm print-agent pair   --server http://localhost --code <mã-6-số> --no-service
+```
+
+> `--no-service` là **bắt buộc** khi chạy bằng Docker: trong container không có systemd để cài
+> dịch vụ nền — `restart: unless-stopped` đã lo đúng việc đó rồi.
+
+**Bước 4 — chạy:**
+
+```bash
+docker compose up -d
+docker compose logs -f          # thấy "khởi động ... N máy in" là xong
+```
+
+#### Cập nhật (Docker)
+
+```bash
+cd ~/print-agent && docker compose pull && docker compose up -d
+```
+
+#### Gỡ (Docker)
+
+```bash
+cd ~/print-agent && docker compose down
+sudo rm -rf /etc/trcf-print-agent          # xoá luôn liên kết → lần sau phải ghép lại
+```
+
+---
+
+### Máy in không ra giấy — xử lý
+
+| Hiện tượng | Xử lý |
+|---|---|
+| `pair` báo **"mã ghép sai hoặc đã hết hạn"** | Mã sống 10 phút và **dùng một lần**. Lấy mã mới. Bấm nút lấy mã hai lần thì **chỉ mã mới nhất** còn dùng được. |
+| `pair` báo **"không gọi được ERP"** | Sai địa chỉ. Dùng `http://localhost` (**không** kèm `:3333`), hoặc IP máy chủ nếu máy in cắm ở máy khác. |
+| `pair` báo máy in **đang do máy khác cầm** | Đúng như vậy — một máy in chỉ thuộc một máy tính. Vào ERP gỡ nó khỏi máy cũ (menu ⋯ → *Thu hồi chương trình in*) rồi ghép lại. |
+| `list` không thấy máy in nào, `/dev/usb/` trống | Hệ thống in của Linux (CUPS) hay **giành mất** máy in nhiệt USB: nó tự thêm một hàng đợi rồi tách driver, làm `/dev/usb/lpN` biến mất. Gỡ hàng đợi đó (`lpstat -p` rồi `lpadmin -x <tên>`) hoặc tắt CUPS nếu quán không in giấy A4: `sudo systemctl disable --now cups cups-browsed`. |
+| Bill in ra nhưng **ngăn kéo tiền không bật** | Máy in dùng chân RJ11 khác. Ghép lại kèm `--drawer-pin 1` (mặc định là **chân 2**, đa số máy dùng chân này; `1` là chân 5). |
+| Cột **Kết nối in** báo *"Chưa rõ tình trạng máy in"* | Chương trình in còn chạy nhưng lâu không báo tình trạng cổng. Xem `journalctl -u trcf-print-agent -n 50` (hoặc `docker compose logs`). |
+| Lệnh in nằm **"Đang chờ"** mãi | Máy in chưa ghép, hoặc chương trình in không chạy. Kiểm `systemctl status trcf-print-agent`. Muốn bỏ lệnh: màn *Hàng đợi in* → **Bỏ lệnh**. |
+
+Cần hỗ trợ: gửi kèm
+
+```bash
+trcf-print-agent version && trcf-print-agent list && journalctl -u trcf-print-agent -n 100
+```
+
+---
+
+## 6. Vận hành hằng ngày
 
 Mọi lệnh chạy trong thư mục cài:
 
@@ -166,7 +345,7 @@ Máy chủ mất điện rồi bật lại: phần mềm **tự chạy lại**, 
 
 ---
 
-## 6. Cập nhật phiên bản mới
+## 7. Cập nhật phiên bản mới
 
 ```bash
 cd ~/fnberp && docker compose pull && docker compose up -d
@@ -184,7 +363,7 @@ Cấu hình và **toàn bộ dữ liệu được giữ nguyên**.
 
 ---
 
-## 7. Sao lưu dữ liệu — QUAN TRỌNG
+## 8. Sao lưu dữ liệu — QUAN TRỌNG
 
 Dữ liệu (đơn hàng, kho, khách, sổ quỹ) nằm trong volume Docker `pgdata` **trên chính máy chủ này**.
 Máy hỏng ổ cứng mà không có bản sao là **mất sạch**.
@@ -216,7 +395,7 @@ mkdir -p ~/backups
 
 ---
 
-## 8. Cấu trúc thư mục cài
+## 9. Cấu trúc thư mục cài
 
 ```
 ~/fnberp/
@@ -240,7 +419,7 @@ không truy cập trực tiếp từ ngoài được.
 
 ---
 
-## 9. Gặp sự cố
+## 10. Gặp sự cố
 
 | Hiện tượng | Xử lý |
 |---|---|
@@ -263,7 +442,7 @@ cd ~/fnberp && docker compose ps && docker compose logs --tail=100
 
 ---
 
-## 10. Cài thủ công (không dùng script)
+## 11. Cài thủ công (không dùng script)
 
 ```bash
 mkdir -p ~/fnberp && cd ~/fnberp
