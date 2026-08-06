@@ -62,6 +62,39 @@ grn "✓ Đã tải phần mềm"
 # Số `lpN` KHÔNG cố định — rút cắm lại dây hay khởi động máy là nó nhảy. Nên
 # script DÒ LẠI mỗi lần chạy, và cách chữa khi nhảy số cũng chính là chạy lại
 # script này (xem thông báo cuối).
+# CUPS phải xử TRƯỚC khi dò, không phải chỉ nhắc khi dò hụt.
+#
+# Ca thật ở quán Coffeetree 2026-08-06: máy in ĐANG hiện, cài xong chạy ngon, rồi
+# giữa buổi CUPS mới thêm hàng đợi và giật `usblp` — `/dev/usb/lp4` biến mất, bill
+# in được nửa tờ rồi máy nhả tiếp mã PostScript của CUPS ra giấy. Bản cũ của script
+# này chỉ nhắc CUPS trong nhánh "không thấy máy in", nên ca đó lọt lưới hoàn toàn.
+#
+# `disable` KHÔNG đủ: quán đó đã disable cả 4 unit từ 05/08 mà `cups.socket` vẫn
+# đánh thức `cupsd` (GNOME `gsd-printer` tự dò máy in rồi thêm hàng đợi). Phải `mask`.
+if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet cups 2>/dev/null; then
+  ylw "⚠ Hệ thống in của Linux (CUPS) đang chạy — nó sẽ GIÀNH máy in nhiệt."
+  echo "  Triệu chứng nếu bỏ qua: bill in được vài dòng rồi đứt, hoặc máy nhả ra"
+  echo "  mã PostScript, mà phần mềm vẫn báo 'đã in xong' (hỏng im lặng)."
+  echo
+  if lpstat -v 2>/dev/null | grep -q 'usb://'; then
+    echo "  Đang có hàng đợi CUPS trỏ vào máy in USB:"
+    lpstat -v 2>/dev/null | grep 'usb://' | sed 's/^/      /'
+    echo
+  fi
+  echo "  Quán KHÔNG in giấy A4 → khoá hẳn CUPS (lệnh dứt điểm, có đường lùi):"
+  echo "      sudo lpadmin -x <tên-hàng-đợi>          # xem tên ở dòng trên"
+  echo "      sudo systemctl mask --now cups cups.socket cups.path cups-browsed"
+  echo "      # gọi máy in trở lại (tương đương rút/cắm dây USB):"
+  echo "      ls /sys/bus/usb/drivers/usblp/            # tìm mã cổng, vd 1-2:1.0"
+  echo "      echo 0 | sudo tee /sys/bus/usb/devices/1-2/authorized; sleep 2"
+  echo "      echo 1 | sudo tee /sys/bus/usb/devices/1-2/authorized"
+  echo
+  echo "  Muốn dùng lại CUPS sau này:  sudo systemctl unmask cups cups.socket cups.path cups-browsed"
+  echo
+  echo "  (Vẫn cài tiếp — nhưng chưa khoá CUPS thì đừng tin là in được.)"
+  echo
+fi
+
 mapfile -t LPS < <(ls /dev/usb/lp* 2>/dev/null || true)
 # Khối YAML dựng sẵn thành BIẾN, không dùng $( ) trong heredoc: command substitution
 # nuốt sạch xuống dòng ở cuối, nên `volumes:` dính vào dòng thiết bị cuối cùng và cả
