@@ -175,12 +175,12 @@ Gọn nhất, và cập nhật về sau cũng chỉ một lệnh. **Chỉ chạy
 Windows/macOS nằm trong máy ảo không có cổng USB nào để cấp cho container.
 
 ```bash
-cd ~ && curl -fsSL https://raw.githubusercontent.com/nguyentrucanhtuan/fnberp_deploy/main/install/print-agent.sh \
+cd ~ && curl -fsSL https://raw.githubusercontent.com/nguyentrucanhtuan/fnberp_deploy/main/install/bridge.sh \
   | GHCR_TOKEN=<token> sudo -E bash
 ```
 
 Lệnh này tự làm hết: kiểm máy chạy được không → tải phần mềm → **tự dò máy in đang cắm** →
-ghi cấu hình vào `/opt/trcf-print-agent` → cài lệnh gọn `trcf-print-agent`.
+ghi cấu hình vào `/opt/trcf-bridge` → cài lệnh gọn `trcf-bridge`.
 
 > Máy đã cài ERP thì thường **không cần token** — Docker đã đăng nhập sẵn từ lần cài đó.
 > Cứ chạy không có `GHCR_TOKEN=`, thiếu thì script sẽ tự nhắc.
@@ -192,10 +192,10 @@ cài thì phải lấy mã trước rồi mới dám chạy, lỡ tay là mã h�
 # 1. Vào ERP → Máy in → Thêm máy in → chọn kết nối USB → lưu
 # 2. Menu ⋯ ở dòng vừa tạo → Lấy mã ghép (mã 6 số)
 # 3. Chạy trên máy quầy:
-sudo trcf-print-agent pair --server http://localhost --code <mã-6-số>
+sudo trcf-bridge pair --server http://localhost --code <mã-6-số>
 
 # 4. Bật chạy nền:
-docker compose -f /opt/trcf-print-agent/docker-compose.yml up -d
+docker compose -f /opt/trcf-bridge/docker-compose.yml up -d
 ```
 
 Xong: cột **Kết nối in** ở màn *Máy in* phải chuyển sang **"Đang chạy"**.
@@ -206,7 +206,7 @@ với mã mới. Chương trình tự cầm thêm máy in đó, không phải c�
 #### Cập nhật (Docker)
 
 ```bash
-cd ~ && curl -fsSL https://raw.githubusercontent.com/nguyentrucanhtuan/fnberp_deploy/main/install/print-agent.sh \
+cd ~ && curl -fsSL https://raw.githubusercontent.com/nguyentrucanhtuan/fnberp_deploy/main/install/bridge.sh \
   | sudo -E bash
 ```
 
@@ -219,13 +219,13 @@ máy in **giữ nguyên**, không phải ghép lại.
 #### Xem và gỡ (Docker)
 
 ```bash
-docker compose -f /opt/trcf-print-agent/docker-compose.yml logs -f    # xem nhật ký
-trcf-print-agent list                                                # xem máy in đang cắm
-trcf-print-agent version                                             # đang chạy bản nào
+docker compose -f /opt/trcf-bridge/docker-compose.yml logs -f    # xem nhật ký
+trcf-bridge list                                                # xem máy in đang cắm
+trcf-bridge version                                             # đang chạy bản nào
 
-docker compose -f /opt/trcf-print-agent/docker-compose.yml down       # gỡ
-sudo rm -rf /opt/trcf-print-agent /usr/local/bin/trcf-print-agent
-sudo rm -rf /etc/trcf-print-agent      # xoá luôn liên kết → lần sau phải ghép lại
+docker compose -f /opt/trcf-bridge/docker-compose.yml down       # gỡ
+sudo rm -rf /opt/trcf-bridge /usr/local/bin/trcf-bridge
+sudo rm -rf /etc/trcf-bridge      # xoá luôn liên kết → lần sau phải ghép lại
 ```
 
 ---
@@ -239,16 +239,16 @@ Chương trình chạy bằng systemd, tự bật lại sau khi mất điện.
 
 ```bash
 echo <token> | docker login ghcr.io -u nguyentrucanhtuan --password-stdin
-docker pull ghcr.io/nguyentrucanhtuan/trcf-print-agent:latest
-id=$(docker create ghcr.io/nguyentrucanhtuan/trcf-print-agent:latest)
-sudo docker cp $id:/usr/local/bin/trcf-print-agent /usr/local/bin/trcf-print-agent
-docker rm $id && sudo chmod +x /usr/local/bin/trcf-print-agent
+docker pull ghcr.io/nguyentrucanhtuan/trcf-bridge:latest
+id=$(docker create ghcr.io/nguyentrucanhtuan/trcf-bridge:latest)
+sudo docker cp $id:/usr/local/bin/trcf-bridge /usr/local/bin/trcf-bridge
+docker rm $id && sudo chmod +x /usr/local/bin/trcf-bridge
 ```
 
 **Bước 2 — xem máy in đã nhận chưa:**
 
 ```bash
-trcf-print-agent list
+trcf-bridge list
 ```
 
 Không thấy gì thì kiểm dây, và xem mục *Máy in không ra giấy* ở dưới.
@@ -259,7 +259,7 @@ menu ⋯ của dòng vừa tạo → **Lấy mã ghép**. Được **mã 6 số*
 **Bước 4 — ghép:**
 
 ```bash
-sudo trcf-print-agent pair --server http://localhost --code <mã-6-số>
+sudo trcf-bridge pair --server http://localhost --code <mã-6-số>
 ```
 
 Lệnh này tự dò máy in, **in một tờ thử**, rồi cài dịch vụ chạy nền. Không ra giấy thì nó dừng
@@ -274,7 +274,7 @@ ngay tại đó — không ghép bừa.
 **Bước 5 — kiểm:** ở màn *Máy in*, cột **Kết nối in** phải chuyển sang **"Đang chạy"**. Trên máy:
 
 ```bash
-systemctl status trcf-print-agent
+systemctl status trcf-bridge
 ```
 
 **Cắm thêm máy in thứ hai** (bếp, tem): lặp lại bước 3–4 với mã mới. Chương trình tự cầm thêm
@@ -283,13 +283,13 @@ máy in đó, **không** phải cài lại lần nữa.
 #### Cập nhật chương trình in
 
 ```bash
-docker pull ghcr.io/nguyentrucanhtuan/trcf-print-agent:latest
-id=$(docker create ghcr.io/nguyentrucanhtuan/trcf-print-agent:latest)
-sudo systemctl stop trcf-print-agent
-sudo docker cp $id:/usr/local/bin/trcf-print-agent /usr/local/bin/trcf-print-agent
+docker pull ghcr.io/nguyentrucanhtuan/trcf-bridge:latest
+id=$(docker create ghcr.io/nguyentrucanhtuan/trcf-bridge:latest)
+sudo systemctl stop trcf-bridge
+sudo docker cp $id:/usr/local/bin/trcf-bridge /usr/local/bin/trcf-bridge
 docker rm $id
-sudo systemctl start trcf-print-agent
-trcf-print-agent version
+sudo systemctl start trcf-bridge
+trcf-bridge version
 ```
 
 Cấu hình và liên kết máy in **giữ nguyên** — không phải ghép lại.
@@ -297,9 +297,9 @@ Cấu hình và liên kết máy in **giữ nguyên** — không phải ghép l�
 #### Gỡ ra
 
 ```bash
-sudo systemctl disable --now trcf-print-agent
-sudo rm /etc/systemd/system/trcf-print-agent.service /usr/local/bin/trcf-print-agent
-sudo rm -rf /etc/trcf-print-agent          # xoá luôn liên kết → lần sau phải ghép lại
+sudo systemctl disable --now trcf-bridge
+sudo rm /etc/systemd/system/trcf-bridge.service /usr/local/bin/trcf-bridge
+sudo rm -rf /etc/trcf-bridge          # xoá luôn liên kết → lần sau phải ghép lại
 sudo systemctl daemon-reload
 ```
 
@@ -314,13 +314,13 @@ sudo systemctl daemon-reload
 | `pair` báo máy in **đang do máy khác cầm** | Đúng như vậy — một máy in chỉ thuộc một máy tính. Vào ERP gỡ nó khỏi máy cũ (menu ⋯ → *Thu hồi chương trình in*) rồi ghép lại. |
 | `list` không thấy máy in nào, `/dev/usb/` trống | Hệ thống in của Linux (CUPS) hay **giành mất** máy in nhiệt USB: nó tự thêm một hàng đợi rồi tách driver, làm `/dev/usb/lpN` biến mất. Gỡ hàng đợi đó (`lpstat -p` rồi `lpadmin -x <tên>`) hoặc tắt CUPS nếu quán không in giấy A4: `sudo systemctl disable --now cups cups-browsed`. |
 | Bill in ra nhưng **ngăn kéo tiền không bật** | Máy in dùng chân RJ11 khác. Ghép lại kèm `--drawer-pin 1` (mặc định là **chân 2**, đa số máy dùng chân này; `1` là chân 5). |
-| Cột **Kết nối in** báo *"Chưa rõ tình trạng máy in"* | Chương trình in còn chạy nhưng lâu không báo tình trạng cổng. Xem `journalctl -u trcf-print-agent -n 50` (hoặc `docker compose logs`). |
-| Lệnh in nằm **"Đang chờ"** mãi | Máy in chưa ghép, hoặc chương trình in không chạy. Kiểm `systemctl status trcf-print-agent`. Muốn bỏ lệnh: màn *Hàng đợi in* → **Bỏ lệnh**. |
+| Cột **Kết nối in** báo *"Chưa rõ tình trạng máy in"* | Chương trình in còn chạy nhưng lâu không báo tình trạng cổng. Xem `journalctl -u trcf-bridge -n 50` (hoặc `docker compose logs`). |
+| Lệnh in nằm **"Đang chờ"** mãi | Máy in chưa ghép, hoặc chương trình in không chạy. Kiểm `systemctl status trcf-bridge`. Muốn bỏ lệnh: màn *Hàng đợi in* → **Bỏ lệnh**. |
 
 Cần hỗ trợ: gửi kèm
 
 ```bash
-trcf-print-agent version && trcf-print-agent list && journalctl -u trcf-print-agent -n 100
+trcf-bridge version && trcf-bridge list && journalctl -u trcf-bridge -n 100
 ```
 
 ---

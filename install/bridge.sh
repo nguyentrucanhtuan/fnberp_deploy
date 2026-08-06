@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────────────────
-# TRCF ERP — cài CHƯƠNG TRÌNH IN ở máy quầy (máy in USB), chạy bằng Docker.
+# TRCF ERP — cài TRCF BRIDGE ở máy quầy: cầu nối giữa ERP và thiết bị cắm tại
+# quầy (hiện tại là máy in USB), chạy bằng Docker.
 #
-#   cd ~ && curl -fsSL https://raw.githubusercontent.com/nguyentrucanhtuan/fnberp_deploy/main/install/print-agent.sh \
+#   cd ~ && curl -fsSL https://raw.githubusercontent.com/nguyentrucanhtuan/fnberp_deploy/main/install/bridge.sh \
 #     | GHCR_TOKEN=<token> sudo -E bash
 #
 # Script này CHỈ CÀI, cố ý KHÔNG ghép nối và KHÔNG chạy.
@@ -15,10 +16,10 @@
 # ─────────────────────────────────────────────────────────────────────────
 set -euo pipefail
 
-IMAGE="ghcr.io/nguyentrucanhtuan/trcf-print-agent:latest"
-DIR="/opt/trcf-print-agent"
-CFG_DIR="/etc/trcf-print-agent"
-WRAPPER="/usr/local/bin/trcf-print-agent"
+IMAGE="ghcr.io/nguyentrucanhtuan/trcf-bridge:latest"
+DIR="/opt/trcf-bridge"
+CFG_DIR="/etc/trcf-bridge"
+WRAPPER="/usr/local/bin/trcf-bridge"
 GHCR_USER="nguyentrucanhtuan"
 
 red()  { printf '\033[31m%s\033[0m\n' "$*"; }
@@ -26,7 +27,7 @@ grn()  { printf '\033[32m%s\033[0m\n' "$*"; }
 ylw()  { printf '\033[33m%s\033[0m\n' "$*"; }
 die()  { red "✗ $*"; exit 1; }
 
-echo "── Cài chương trình in cho TRCF ERP ──"
+echo "── Cài TRCF Bridge (cầu nối thiết bị tại quầy) ──"
 
 # ── 1. Máy này có chạy được không ────────────────────────────────────────
 # Chặn sớm và nói rõ lý do: Docker trên Windows/macOS chạy trong một máy ảo
@@ -87,12 +88,12 @@ fi
 # ── 4. Ghi cấu hình chạy ─────────────────────────────────────────────────
 mkdir -p "$DIR" "$CFG_DIR"
 cat > "$DIR/docker-compose.yml" <<YAML
-# Tệp này do install/print-agent.sh SINH RA — sửa tay thì lần chạy lại sẽ ghi đè.
+# Tệp này do install/bridge.sh SINH RA — sửa tay thì lần chạy lại sẽ ghi đè.
 # Máy in đổi cổng (số lpN nhảy) thì chạy lại script, nó tự dò và ghi lại.
 services:
-  print-agent:
+  bridge:
     image: $IMAGE
-    container_name: trcf-print-agent
+    container_name: trcf-bridge
     restart: unless-stopped
     # Dùng chung mạng với máy thật để gọi được http://localhost (ERP ở cổng 80).
     network_mode: host
@@ -104,27 +105,27 @@ YAML
 # dịch vụ systemd cũ vẫn trỏ vào đường dẫn đó, thay bằng vỏ bọc là nó chạy `docker
 # compose ...` mỗi lần systemd khởi động — vòng lặp không ai hiểu nổi. Dẹp dịch vụ cũ
 # và cất binary sang một bên, nói rõ đã làm gì.
-if [ -f "$WRAPPER" ] && ! head -c 200 "$WRAPPER" | grep -q "install/print-agent.sh sinh ra"; then
+if [ -f "$WRAPPER" ] && ! head -c 200 "$WRAPPER" | grep -q "sinh ra"; then
   ylw "⚠ Máy này đang cài kiểu TRỰC TIẾP (binary ở $WRAPPER)."
-  if systemctl is-enabled trcf-print-agent >/dev/null 2>&1 || systemctl is-active trcf-print-agent >/dev/null 2>&1; then
+  if systemctl is-enabled trcf-bridge >/dev/null 2>&1 || systemctl is-active trcf-bridge >/dev/null 2>&1; then
     echo "  → Dừng và gỡ dịch vụ systemd cũ (bản Docker tự chạy lại, không cần nó)."
-    systemctl disable --now trcf-print-agent >/dev/null 2>&1 || true
-    rm -f /etc/systemd/system/trcf-print-agent.service
+    systemctl disable --now trcf-bridge >/dev/null 2>&1 || true
+    rm -f /etc/systemd/system/trcf-bridge.service
     systemctl daemon-reload || true
   fi
   mv "$WRAPPER" "$WRAPPER.truc-tiep.bak"
   echo "  → Binary cũ cất tại $WRAPPER.truc-tiep.bak (liên kết máy in trong $CFG_DIR giữ nguyên)."
 fi
 
-# Vỏ bọc cho gọn: gõ `trcf-print-agent pair ...` y như bản cài trực tiếp, không phải
+# Vỏ bọc cho gọn: gõ `trcf-bridge pair ...` y như bản cài trực tiếp, không phải
 # nhớ cả câu `docker compose -f ... run --rm`. Dùng `run --rm` chứ không `exec` vì lúc
 # ghép thì container chưa chạy (chưa có token để chạy).
 cat > "$WRAPPER" <<WRAP
 #!/usr/bin/env bash
-# Vỏ bọc do install/print-agent.sh sinh ra — chạy chương trình in trong container.
+# Vỏ bọc do install/bridge.sh sinh ra — chạy TRCF Bridge trong container.
 # --progress quiet: giấu mấy dòng "Container ... Creating" của compose, chúng chen vào
 # giữa thông báo của chương trình in và làm người lắp tưởng có gì đó đang hỏng.
-exec docker compose --progress quiet -f "$DIR/docker-compose.yml" run --rm print-agent "\$@"
+exec docker compose --progress quiet -f "$DIR/docker-compose.yml" run --rm bridge "\$@"
 WRAP
 chmod +x "$WRAPPER"
 grn "✓ Đã cài vào $DIR"
@@ -133,7 +134,7 @@ grn "✓ Đã cài vào $DIR"
 if [ -s "$CFG_DIR/config.json" ]; then
   echo "→ Máy này đã ghép từ trước — khởi động lại với cấu hình mới ..."
   docker compose -f "$DIR/docker-compose.yml" up -d
-  grn "✓ Xong. Chương trình in đang chạy."
+  grn "✓ Xong. TRCF Bridge đang chạy."
   echo
   echo "  Xem nhật ký:   docker compose -f $DIR/docker-compose.yml logs -f"
   exit 0
@@ -147,7 +148,7 @@ $(grn "✓ CÀI XONG.") Còn MỘT bước nữa: ghép với ERP.
   2. Bấm menu ⋯ ở dòng vừa tạo → $(printf '\033[1mLấy mã ghép\033[0m') (mã 6 số, sống 10 phút)
   3. Chạy trên máy này:
 
-       sudo trcf-print-agent pair --server http://localhost --code <mã-6-số>
+       sudo trcf-bridge pair --server http://localhost --code <mã-6-số>
 
      (máy in cắm ở máy khác thì thay localhost bằng IP máy chủ)
 
