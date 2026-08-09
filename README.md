@@ -366,22 +366,40 @@ Cấu hình và **toàn bộ dữ liệu được giữ nguyên**.
 
 ## 8. Sao lưu dữ liệu — QUAN TRỌNG
 
-Dữ liệu (đơn hàng, kho, khách, sổ quỹ) nằm trong volume Docker `pgdata` **trên chính máy chủ này**.
+Dữ liệu nằm trên **chính máy chủ này**, trong **hai** volume Docker:
+
+| Volume | Chứa gì | Sao lưu bằng |
+|---|---|---|
+| `pgdata` | Đơn hàng, kho, khách, sổ quỹ, nhân sự | `pg_dump` |
+| `uploads` | **Ảnh sản phẩm** | `tar` (⚠️ `pg_dump` KHÔNG chứa ảnh) |
+
 Máy hỏng ổ cứng mà không có bản sao là **mất sạch**.
+
+> ⚠️ Trong CSDL chỉ lưu **tên tệp ảnh**, còn tệp ảnh nằm ở volume `uploads`. Phục hồi mỗi `pg_dump` sẽ ra một thực đơn **trắng ảnh** — sản phẩm còn đủ nhưng ô ảnh rỗng. Phải sao lưu cả hai.
 
 **Sao lưu:**
 
 ```bash
 cd ~/fnberp
+# 1. Cơ sở dữ liệu
 docker compose exec -T postgres pg_dump -U trcf trcf_erp | gzip > ~/backup-$(date +%F).sql.gz
+# 2. Ảnh sản phẩm
+docker run --rm -v trcf-erp_uploads:/data -v ~:/out alpine \
+  tar czf /out/backup-uploads-$(date +%F).tar.gz -C /data .
 ```
 
 **Phục hồi:**
 
 ```bash
 cd ~/fnberp
+# 1. Cơ sở dữ liệu
 gunzip -c ~/backup-2026-07-21.sql.gz | docker compose exec -T postgres psql -U trcf trcf_erp
+# 2. Ảnh sản phẩm
+docker run --rm -v trcf-erp_uploads:/data -v ~:/in alpine \
+  tar xzf /in/backup-uploads-2026-07-21.tar.gz -C /data
 ```
+
+*(tên volume có tiền tố `trcf-erp_` theo `name:` trong `docker-compose.yml`; kiểm bằng `docker volume ls`)*
 
 **Sao lưu tự động mỗi đêm 2h** (khuyến nghị — chạy một lần rồi quên):
 

@@ -5,6 +5,7 @@
 #   • /socket.io/*   → backend  (WebSocket màn bếp + màn khách — 045)
 #   • /shop/*        → backend  (BFF công khai cho Zalo Mini App — 046)
 #   • /bridge/*      → backend  (TRCF Bridge — cầu nối thiết bị ở máy quầy, 047)
+#   • /uploads/*     → backend  (ảnh sản phẩm, đọc công khai)
 #   • còn lại        → frontend (Next.js; API quản trị đi qua BFF /api có RBAC)
 #
 # Nhờ gộp một origin, trình duyệt trên tablet/điện thoại trong LAN chỉ cần biết
@@ -33,7 +34,10 @@
 	#
 	# Đường này tự xác thực bằng token riêng của agent (`AgentTokenGuard`), không đi qua
 	# RBAC — cùng mức phơi ra như `/shop/*`. Riêng bước ghép mã bị chặn 5 lần/phút.
-	@backend path /socket.io/* /shop/* /bridge/*
+	# `/uploads/*` = ảnh sản phẩm do backend phục vụ tĩnh, ĐỌC CÔNG KHAI (Mini App
+	# hiện ảnh món cho khách chưa đăng nhập). Đi thẳng backend thay vì vòng qua
+	# Next.js cho nhẹ; Next vẫn có rewrite dự phòng nếu chạy không có Caddy.
+	@backend path /socket.io/* /shop/* /bridge/* /uploads/*
 	handle @backend {
 		# Không đặt timeout: agent giữ mỗi lượt hỏi việc tới 25 giây (long-poll) để tờ
 		# bill ra gần như tức thì. Cắt sớm hơn là nó phải hỏi lại liên tục.

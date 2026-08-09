@@ -75,6 +75,10 @@ services:
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
       ZALO_APP_SECRET: ${ZALO_APP_SECRET:-}
+      # Ảnh sản phẩm — ghi vào volume `uploads` (xem mục sao lưu ở README).
+      UPLOADS_DIR: /app/uploads
+    volumes:
+      - uploads:/app/uploads
     healthcheck:
       # Bất kỳ HTTP response nào = process sống. start_period chờ migration chạy xong.
       test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:3333/auth/login',r=>process.exit(0)).on('error',()=>process.exit(1))"]
@@ -106,5 +110,7 @@ services:
 
 volumes:
   pgdata:
+  # Ảnh sản phẩm. `pg_dump` KHÔNG chứa ảnh — phải sao lưu riêng (xem README).
+  uploads:
   caddy_data:
   caddy_config:
