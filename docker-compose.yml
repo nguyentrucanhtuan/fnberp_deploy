@@ -77,6 +77,12 @@ services:
       ZALO_APP_SECRET: ${ZALO_APP_SECRET:-}
       # Ảnh sản phẩm — ghi vào volume `uploads` (xem mục sao lưu ở README).
       UPLOADS_DIR: /app/uploads
+      # Rỗng = URL ảnh TƯƠNG ĐỐI → xem ERP bằng địa chỉ nào (IP LAN · domain ·
+      # tunnel · Tailscale) cũng thấy ảnh. Dấu `-` (không phải `:-`) là cố ý:
+      # biến chưa khai trong .env vẫn được truyền vào dạng RỖNG, chứ không rơi
+      # về APP_URL — APP_URL là một địa chỉ cố định, chỉ máy tới được địa chỉ đó
+      # mới thấy ảnh. Chỉ điền khi ảnh ở CDN/R2 thật.
+      UPLOADS_BASE_URL: ${UPLOADS_BASE_URL-}
     volumes:
       - uploads:/app/uploads
     healthcheck:

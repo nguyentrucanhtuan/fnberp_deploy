@@ -197,6 +197,10 @@ SITE_ADDRESS=$SITE_ADDRESS
 HTTP_PORT=$HTTP_PORT
 HTTPS_PORT=$HTTPS_PORT
 APP_URL=$PUBLIC_URL
+# Gốc URL ảnh sản phẩm. ĐỂ RỖNG = đường dẫn tương đối → xem ERP bằng địa chỉ nào
+# cũng thấy ảnh (IP LAN ở quầy · domain/tunnel từ xa · Tailscale lúc hỗ trợ).
+# Chỉ điền khi ảnh nằm ở CDN/R2 thật.
+UPLOADS_BASE_URL=
 
 # ── Phiên bản ảnh ──
 IMAGE_TAG=$IMAGE_TAG
