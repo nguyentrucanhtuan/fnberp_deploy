@@ -59,9 +59,10 @@ fi
 grn "✓ Đã tải phần mềm"
 
 # ── 3. Tìm máy in USB ────────────────────────────────────────────────────
-# Số `lpN` KHÔNG cố định — rút cắm lại dây hay khởi động máy là nó nhảy. Nên
-# script DÒ LẠI mỗi lần chạy, và cách chữa khi nhảy số cũng chính là chạy lại
-# script này (xem thông báo cuối).
+# Số `lpN` KHÔNG cố định — rút cắm lại dây hay khởi động máy là nó nhảy. Từ bản
+# 2026-08-11 việc đó KHÔNG còn ảnh hưởng gì: compose không khai từng thiết bị nữa
+# (mount cả /dev), còn bản gán máy in bám SÊ-RI chứ không bám đường dẫn. Dò ở đây
+# chỉ để nói cho người lắp biết máy in đã hiện ra chưa.
 # CUPS phải xử TRƯỚC khi dò, không phải chỉ nhắc khi dò hụt.
 #
 # Ca thật ở quán Coffeetree 2026-08-06: máy in ĐANG hiện, cài xong chạy ngon, rồi
@@ -96,33 +97,47 @@ if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet cups 2>/d
 fi
 
 mapfile -t LPS < <(ls /dev/usb/lp* 2>/dev/null || true)
-# Khối YAML dựng sẵn thành BIẾN, không dùng $( ) trong heredoc: command substitution
-# nuốt sạch xuống dòng ở cuối, nên `volumes:` dính vào dòng thiết bị cuối cùng và cả
-# tệp thành YAML hỏng. Đã gặp thật khi chạy trên máy quán.
-DEVICES=""
+# Dò chỉ để BÁO CHO NGƯỜI LẮP biết máy in đã hiện chưa — KHÔNG còn dùng để dựng
+# `devices:` trong compose nữa (xem khối YAML bên dưới, mục "vì sao không khai từng
+# thiết bị"). Nhờ vậy máy in cắm sau, hay đổi số `lpN`, đều không phải chạy lại script.
 if [ ${#LPS[@]} -gt 0 ]; then
-  DEVICES="    devices:
-"
-  for d in "${LPS[@]}"; do
-    DEVICES+="      - \"$d:$d\"
-"
-  done
   grn "✓ Thấy máy in: ${LPS[*]}"
 else
   ylw "⚠ Không thấy máy in USB nào (/dev/usb/lp* trống)."
-  echo "  Vẫn cài tiếp — dùng được cho máy in MẠNG qua chương trình in."
+  echo "  Vẫn cài tiếp — chương trình in dò lại mỗi nhịp, cắm máy in sau vẫn nhận."
   echo "  Nếu quán có máy in USB đang cắm mà không thấy, khả năng cao là hệ thống in"
-  echo "  của Linux (CUPS) đã giành mất. Gỡ hàng đợi của nó rồi chạy lại script này:"
+  echo "  của Linux (CUPS) đã giành mất. Gỡ hàng đợi của nó rồi cắm lại dây:"
   echo "      lpstat -p                       # xem hàng đợi nào đang giữ"
   echo "      sudo lpadmin -x <tên-hàng-đợi>"
-  echo "      sudo systemctl disable --now cups cups-browsed   # nếu quán không in giấy A4"
+  # `disable` KHÔNG chặn được CUPS — socket/dbus activation vẫn kéo nó dậy rồi nó tự
+  # thêm lại hàng đợi và giật `usblp`. Đo thật ở Gấc Đỏ 2026-08-11: cả 4 unit
+  # `is-enabled=disabled` từ hôm cài mà `is-active=running`, queue tự mọc lại. Phải `mask`.
+  echo "      sudo systemctl mask --now cups cups.socket cups.path cups-browsed"
+  echo "                                      # nếu quán không in giấy A4"
 fi
 
 # ── 4. Ghi cấu hình chạy ─────────────────────────────────────────────────
 mkdir -p "$DIR" "$CFG_DIR"
 cat > "$DIR/docker-compose.yml" <<YAML
 # Tệp này do install/bridge.sh SINH RA — sửa tay thì lần chạy lại sẽ ghi đè.
-# Máy in đổi cổng (số lpN nhảy) thì chạy lại script, nó tự dò và ghi lại.
+#
+# VÌ SAO KHÔNG KHAI TỪNG THIẾT BỊ (\`devices: "/dev/usb/lp1:/dev/usb/lp1"\`):
+# khai như vậy là bind CỨNG, và nó đẻ ra hai hỏng hóc đã gặp thật:
+#
+#   1. ĐUA LÚC KHỞI ĐỘNG — ổ cắm máy in ở quán thường bật muộn hơn máy tính. Docker
+#      khởi động container trước khi \`usblp\` kịp tạo node ⇒ container chết ngay lúc
+#      TẠO với mã 128 ("no such file or directory"), mà lỗi lúc tạo thì Docker KHÔNG
+#      thử lại (\`RestartCount=0\`) ⇒ mất in tới khi có người vào bật tay.
+#      Gấc Đỏ 2026-08-11: máy boot 07:05, máy in có điện 07:22 → mất in cả buổi sáng.
+#   2. CẮM THÊM MÁY IN thì phải dựng lại container mới thấy.
+#
+# Cách hiện tại: mount cả /dev (thư mục này luôn tồn tại, node mới do nhân tạo ra là
+# thấy ngay) + cấp quyền theo NHÓM thiết bị. Chương trình in dò lại \`/dev/usb/lp*\`
+# mỗi nhịp nên máy in cắm giữa buổi vẫn nhận, không phải chạy lại script này.
+#
+# \`c 180:* rmw\` = thiết bị ký tự nhóm 180 — đúng nhóm của \`usblp\`. Mount cả /dev
+# nhưng KHÔNG cấp quyền nhóm khác, nên container vẫn không mở nổi ổ đĩa hay thứ gì
+# ngoài máy in.
 services:
   bridge:
     image: $IMAGE
@@ -130,7 +145,10 @@ services:
     restart: unless-stopped
     # Dùng chung mạng với máy thật để gọi được http://localhost (ERP ở cổng 80).
     network_mode: host
-${DEVICES}    volumes:
+    device_cgroup_rules:
+      - "c 180:* rmw"
+    volumes:
+      - /dev:/dev
       - $CFG_DIR:$CFG_DIR
 YAML
 
@@ -189,7 +207,7 @@ $(grn "✓ CÀI XONG.") Còn MỘT bước nữa: ghép với ERP.
 
        docker compose -f $DIR/docker-compose.yml up -d
 
-  Cắm thêm máy in thứ hai (bếp/tem): chạy lại script này để nó dò cổng mới,
-  rồi lặp bước 1–3 với mã mới. Không phải cài lại từ đầu.
+  Cắm thêm máy in thứ hai (bếp/tem): chỉ cần lặp bước 1–3 với mã mới.
+  KHÔNG phải chạy lại script này — chương trình in tự dò thiết bị mới mỗi nhịp.
 
 MSG
