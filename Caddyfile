@@ -6,6 +6,7 @@
 #   • /shop/*        → backend  (BFF công khai cho Zalo Mini App — 046)
 #   • /bridge/*      → backend  (TRCF Bridge — cầu nối thiết bị ở máy quầy, 047)
 #   • /uploads/*     → backend  (ảnh sản phẩm, đọc công khai)
+#   • /payment-methods/momo/ipn → backend (MoMo gọi ngược báo khách đã trả — 006)
 #   • còn lại        → frontend (Next.js; API quản trị đi qua BFF /api có RBAC)
 #
 # Nhờ gộp một origin, trình duyệt trên tablet/điện thoại trong LAN chỉ cần biết
@@ -37,7 +38,14 @@
 	# `/uploads/*` = ảnh sản phẩm do backend phục vụ tĩnh, ĐỌC CÔNG KHAI (Mini App
 	# hiện ảnh món cho khách chưa đăng nhập). Đi thẳng backend thay vì vòng qua
 	# Next.js cho nhẹ; Next vẫn có rewrite dự phòng nếu chạy không có Caddy.
-	@backend path /socket.io/* /shop/* /bridge/* /uploads/*
+	#
+	# `/payment-methods/momo/ipn` là đường MoMo GỌI NGƯỢC khi khách trả xong. Nó phải
+	# là đường DUY NHẤT của nhánh `/payment-methods/*` đi thẳng backend — phần còn lại
+	# của nhánh đó là API quản trị, bắt buộc qua BFF `/api` có RBAC. Thiếu dòng này thì
+	# lời gọi của MoMo rơi vào Next.js và bị đẩy về trang đăng nhập (307): đơn không
+	# tự chốt, mà không có dấu vết nào ở phía quán để lần ra. Đo thật 14/08 trên
+	# CoffeetreePOS trước khi thêm. Route này `@Public()` và tự kiểm chữ ký MoMo.
+	@backend path /socket.io/* /shop/* /bridge/* /uploads/* /payment-methods/momo/ipn
 	handle @backend {
 		# Không đặt timeout: agent giữ mỗi lượt hỏi việc tới 25 giây (long-poll) để tờ
 		# bill ra gần như tức thì. Cắt sớm hơn là nó phải hỏi lại liên tục.
