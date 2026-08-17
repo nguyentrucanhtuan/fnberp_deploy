@@ -21,6 +21,30 @@
 	admin off
 }
 
+# ── X-Forwarded-For: KHÔNG CẦN KHAI GÌ THÊM (đã đo, 17/08/2026) ──
+#
+# Backend khoá rổ đếm tần suất theo địa chỉ người gọi, nên câu hỏi "tiêu đề
+# X-Forwarded-For do client TỰ KHAI có sống sót qua cổng vào không" là câu hỏi
+# bảo mật thật. Đã đo trên caddy v2.11.4: gửi `X-Forwarded-For: 9.9.9.9` từ
+# ngoài vào, thứ tới được upstream chỉ là địa chỉ THẬT — giá trị tự khai bị VỨT.
+#
+# Lý do: Caddy chỉ NỐI THÊM vào chuỗi sẵn có khi lượt gọi đến từ một proxy nằm
+# trong `trusted_proxies`, mà danh sách đó mặc định RỖNG ⇒ luôn ghi đè. Vì vậy
+# `header_up X-Forwarded-For {remote_host}` là thừa — chính Caddy cũng cảnh báo
+# "Unnecessary header_up X-Forwarded-For" khi validate — và nếu khai thì lại tự
+# chuốc rủi ro: quán nào chạy sau tunnel (Cloudflare, ngrok) sẽ bị dồn hết vào
+# một rổ đếm vì `{remote_host}` khi ấy là địa chỉ của tunnel.
+#
+# ⚠️ Đụng tới `trusted_proxies` (global option) thì phải kiểm lại điều này: khai
+# một dải tin cậy vào đó là bật lại đường nối-thêm, và tiêu đề tự khai từ dải ấy
+# sẽ đi xuyên xuống backend.
+#
+# ⚠️ Quán chạy sau một tunnel (Cloudflare, ngrok, Tailscale Funnel) thì cơ chế
+# này QUAY LẠI CẮN: đối tác trực tiếp của Caddy khi ấy là đầu nối của tunnel, nên
+# XFF bị ghi đè thành địa chỉ của tunnel cho MỌI lượt gọi ⇒ cả internet lại chung
+# một rổ đếm, y như lỗi cũ, và không có dấu hiệu gì để nhận ra. Gặp cảnh đó thì
+# khai `trusted_proxies` đúng dải của tunnel để Caddy nối thêm thay vì ghi đè.
+
 {$SITE_ADDRESS::80} {
 	encode zstd gzip
 

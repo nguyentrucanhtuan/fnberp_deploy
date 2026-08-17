@@ -55,11 +55,21 @@ services:
       postgres:
         condition: service_healthy
     # Không publish cổng: caddy đã proxy /socket.io/* và /shop/*, frontend gọi nội bộ.
-    # Cần gọi API trực tiếp để thử nghiệm? bỏ chú thích 2 dòng dưới:
+    # Cần gọi API trực tiếp để thử nghiệm? bỏ chú thích 2 dòng dưới — rồi ĐÓNG LẠI.
+    # ⚠️ Mở cổng này là mở một lối vào KHÔNG đi qua Caddy. Caddy vốn vứt bỏ tiêu
+    # đề `X-Forwarded-For` do client tự khai; đi vòng qua nó thì bất kỳ máy nào
+    # trong mạng quán cũng tự khai được địa chỉ, mỗi giá trị là một rổ đếm mới,
+    # và rào chống dò mật khẩu thành đồ trang trí. Đừng để mở khi chạy thật.
     # ports:
     #   - "${BACKEND_PORT:-3333}:3333"
     environment:
       PORT: 3333
+      # Dải mạng được tin là "proxy của chính hệ" khi đọc địa chỉ gốc của người
+      # gọi (rào tần suất đếm theo địa chỉ đó). Để TRỐNG là đúng cho mọi quán:
+      # mặc định đã phủ mạng nội bộ Docker. Chỉ điền khi có thêm một lớp proxy
+      # nữa ở trước; `TRUST_PROXY=false` để quay về hành vi cũ nếu cần.
+      # Dấu `-` (không phải `:-`) là cố ý: biến chưa khai vẫn truyền vào dạng rỗng.
+      TRUST_PROXY: ${TRUST_PROXY-}
       # Trỏ Postgres nội bộ (không sslmode → backend tự tắt SSL).
       # Muốn dùng DB ngoài (Neon…): thay cả dòng này bằng chuỗi của bạn (+ ?sslmode=require).
       DATABASE_URL: postgresql://${DB_USER:-trcf}:${DB_PASSWORD:?DB_PASSWORD bắt buộc}@postgres:5432/${DB_NAME:-trcf_erp}
