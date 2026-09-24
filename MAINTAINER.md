@@ -42,6 +42,15 @@ máy nào sẵn Docker thì bỏ qua bước 1. Muốn một lệnh: dùng `inst
 
 **⑤ Ghi lại** khách nào dùng token nào (để sau này thu hồi đúng cái cần).
 
+**⑥ Quán có bật đặt hàng Zalo Mini App?** → làm thêm [ZALO-CHECKLIST.md](ZALO-CHECKLIST.md)
+(cổng vào `/zalo-checkout/*`, HTTPS, gác IP, quyền `zalo_orders.*`, loại đơn `ZALO` ở máy in,
+PTTT `ZALO`, Thiết lập kênh Zalo, deploy mini app). Bỏ qua nếu quán không bật kênh này.
+Thiếu bước ở đó thì hỏng **im lặng**: khách trả tiền xong mà quán không thấy đơn.
+Trước khi đẩy bản mới, chạy `bash install/check-config.sh` trên máy phát hành — script
+kiểm hai bất biến cổng vào mà thư mục này không có test nào bảo vệ: `.env` chưa khai
+`ZALO_ALLOWED_IPS` thì allowlist phải MỞ (khai rỗng là Caddy chặn sạch Zalo mà
+`caddy validate` vẫn báo hợp lệ), và route `/zalo-checkout/*` phải đứng TRƯỚC `@backend`.
+
 Có domain riêng thì thêm `--domain erp.quan.vn` vào cuối lệnh ③ (DNS phải trỏ về IP
 máy chủ trước, và cổng 80/443 phải mở ra internet) — Caddy tự cấp HTTPS.
 

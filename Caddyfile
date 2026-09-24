@@ -7,6 +7,7 @@
 #   • /bridge/*      → backend  (TRCF Bridge — cầu nối thiết bị ở máy quầy, 047)
 #   • /uploads/*     → backend  (ảnh sản phẩm, đọc công khai)
 #   • /payment-methods/momo/ipn → backend (MoMo gọi ngược báo khách đã trả — 006)
+#   • /zalo-checkout/*  → backend  (Zalo gọi ngược khi khách trả/đặt COD — 054)
 #   • còn lại        → frontend (Next.js; API quản trị đi qua BFF /api có RBAC)
 #
 # Nhờ gộp một origin, trình duyệt trên tablet/điện thoại trong LAN chỉ cần biết
@@ -47,6 +48,64 @@
 
 {$SITE_ADDRESS::80} {
 	encode zstd gzip
+
+	# ── Zalo gọi ngược: /zalo-checkout/* (kênh đặt hàng Zalo Mini App — 054) ──
+	#
+	# KHỐI NÀY PHẢI NẰM TRƯỚC `handle @backend` và trước `handle` vét về frontend:
+	# `handle` là loại trừ lẫn nhau, khối nào khớp trước thì thắng, nên đặt sau
+	# khối vét là Zalo lại rơi vào Next.js.
+	#
+	# `ZaloCheckoutController` khai `@Public() @Controller('zalo-checkout')` và
+	# backend KHÔNG đặt tiền tố toàn cục, nên đường thật là `/zalo-checkout/callback`
+	# (Zalo báo khách đã trả) và `/zalo-checkout/notify` (Zalo báo đã đặt đơn, gồm
+	# COD). Dùng `/*` chứ không liệt kê hai đường cứng: route mới của cùng
+	# controller vẫn về đúng chỗ, không phải sửa lại tệp này.
+	#
+	# ⚠️ THIẾU DÒNG NÀY THÌ ĐƠN CHẾT LẶNG: lời gọi của Zalo rơi vào Next.js, bị đẩy
+	# về trang đăng nhập, quán không thấy đơn mà Zalo cũng không báo gì — đúng cái
+	# bẫy MoMo IPN đã mắc ngày 14/08 (xem chú thích `/payment-methods/momo/ipn` dưới).
+	# Khách thì đã TRẢ TIỀN rồi.
+	#
+	# Gác IP ở đây (Caddy) chứ không ở NestJS: lượt gọi lạ bị chặn ngay cổng vào,
+	# không tiêu một kết nối DB nào, và dấu vết nằm cùng chỗ với mọi lượt gọi khác
+	# (`/data/access.log`, dòng có `status 403`).
+	#
+	# Khai CẢ `/zalo-checkout` trần lẫn `/zalo-checkout/*`: matcher `path` của Caddy
+	# so nguyên chuỗi, `/zalo-checkout/*` KHÔNG khớp đường không có dấu `/` cuối.
+	# Ngày controller thêm một route ở gốc là nó rơi vào Next.js, chết lặng y như cũ.
+	#
+	# MẶC ĐỊNH MỞ (nhận mọi IP, cả v4 lẫn v6) là CỐ Ý. Allowlist đoán mò mà sai =
+	# Zalo bị chặn = mất đơn khách ĐÃ TRẢ TIỀN, tệ hơn hẳn việc còn mở — cửa này
+	# vẫn phải qua kiểm chữ ký HMAC ở backend. Hẹp cửa là việc của người vận hành
+	# SAU KHI đo được IP thật mà Zalo dùng để gọi (P1-M02): điền `ZALO_ALLOWED_IPS`
+	# trong `.env` (nhiều dải cách nhau bằng DẤU CÁCH — KHÔNG phải dấu phẩy; cú pháp
+	# sai là Caddy KHÔNG khởi động được, mất cả quán chứ không chỉ Zalo), rồi
+	# `docker compose up -d caddy`. Kiểm bằng `caddy validate` TRƯỚC — xem
+	# ZALO-CHECKLIST.md A9.
+	#
+	# ⚠️ `remote_ip` so địa chỉ ĐỐI TÁC TRỰC TIẾP của Caddy, KHÔNG đọc
+	# `X-Forwarded-For`. Quán chạy sau THÊM một lớp (Cloudflare, ngrok, Tailscale
+	# Funnel) thì mọi lượt gọi tới đây mang địa chỉ của tunnel: điền IP của Zalo =
+	# chặn 100% callback; điền IP của tunnel = cổng gác thành đồ trang trí vì cả
+	# internet qua tunnel đều lọt. Gặp topo đó thì ĐỂ TRỐNG `ZALO_ALLOWED_IPS`,
+	# hoặc đổi `remote_ip` thành `client_ip` VÀ khai `trusted_proxies` đúng dải
+	# tunnel ở global option (đọc kỹ khối cảnh báo X-Forwarded-For phía trên).
+	#
+	# ⚠️ BẪY: mặc định `{$VAR:…}` dưới đây CHỈ chạy khi biến **chưa được khai**.
+	# Khai biến với giá trị RỖNG thì `remote_ip` nhận 0 dải và CHẶN SẠCH (403) mọi
+	# lượt gọi của Zalo — đo thật 24/09. Vì vậy `docker-compose.yml` cố ý truyền
+	# `${ZALO_ALLOWED_IPS:-0.0.0.0/0 ::/0}` (dạng `:-`), không phải `${VAR-}`.
+	# Chạy Caddy tay ngoài compose thì ĐỪNG `export ZALO_ALLOWED_IPS=`.
+	@zalo path /zalo-checkout /zalo-checkout/*
+	handle @zalo {
+		@zalo_ip remote_ip {$ZALO_ALLOWED_IPS:0.0.0.0/0 ::/0}
+		handle @zalo_ip {
+			reverse_proxy backend:3333
+		}
+		handle {
+			respond "zalo callback: source ip not allowed" 403
+		}
+	}
 
 	# Kênh real-time + BFF công khai + cầu nối thiết bị ở quầy → backend NestJS
 	#

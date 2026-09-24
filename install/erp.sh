@@ -231,6 +231,19 @@ GEMINI_MODEL=gemini-2.5-flash
 
 # ── Zalo Mini App (tuỳ chọn) ──
 ZALO_APP_SECRET=
+# Gốc máy chủ Zalo Checkout mà backend gọi ra. TRỐNG = gọi Zalo thật.
+# Chỉ điền khi chạy thử với tài khoản sandbox.
+ZALO_CHECKOUT_API_BASE=
+# IP được phép gọi /zalo-checkout/* (Zalo gọi ngược). TRỐNG = nhận mọi IP —
+# đúng cho tới khi ĐO được IP thật của Zalo; cửa này vẫn kiểm chữ ký HMAC.
+# Hẹp lại: các dải cách nhau bằng DẤU CÁCH (TRUST_PROXY thì dùng dấu phẩy —
+# hai quy ước ngược nhau). Khai sai = chặn nhầm Zalo, mất đơn khách đã trả tiền.
+# Sai CÚ PHÁP (dấu phẩy, CIDR hỏng) thì Caddy không khởi động được = mất CẢ quán
+# (POS, quản trị, máy in), không chỉ Zalo. Kiểm trước:
+#   docker compose run --rm caddy caddy validate --config /etc/caddy/Caddyfile
+# Đường lùi: xoá giá trị cho về rỗng rồi docker compose up -d caddy.
+# Xem ZALO-CHECKLIST.md.
+ZALO_ALLOWED_IPS=
 # Origin được phép gọi API từ trình duyệt. Webview Zalo = https://h5.zdn.vn.
 # Trang quản trị không cần khai (đi BFF /api, cùng origin qua Caddy).
 # ⚠️ Để TRỐNG = mọi website trên Internet gọi được /shop/*.

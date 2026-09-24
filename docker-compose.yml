@@ -24,6 +24,19 @@ services:
     environment:
       # ":80" = HTTP trong LAN · "erp.quan.vn" = domain thật + HTTPS tự động
       SITE_ADDRESS: ${SITE_ADDRESS:-:80}
+      # Dải IP được phép gọi `/zalo-checkout/*` (Zalo gọi ngược khi khách trả /
+      # đặt COD). Chưa khai trong `.env` = nhận MỌI IP — đúng mặc định, vì cửa
+      # này còn phải qua kiểm chữ ký HMAC ở backend, còn một allowlist đoán mò
+      # mà sai là chặn nhầm Zalo và mất đơn khách ĐÃ TRẢ TIỀN. Chỉ hẹp lại sau
+      # khi đo được IP thật trên sandbox; nhiều dải cách nhau bằng DẤU CÁCH.
+      #
+      # ⚠️ Ở ĐÂY dùng `:-` (khác `TRUST_PROXY`/`CORS_ALLOWED_ORIGINS` dùng `-`)
+      # và giá trị mặc định viết TƯỜNG MINH, vì Caddy phân biệt "biến CHƯA KHAI"
+      # với "biến khai RỖNG": chưa khai thì `{$VAR:mặc-định}` trong Caddyfile mới
+      # có tác dụng, còn khai rỗng thì `remote_ip` nhận 0 dải và CHẶN SẠCH mọi
+      # lượt gọi của Zalo (403) — đo thật 24/09. Dạng `${VAR-}` sẽ truyền đúng
+      # chuỗi rỗng đó vào container, nên KHÔNG được dùng cho biến này.
+      ZALO_ALLOWED_IPS: ${ZALO_ALLOWED_IPS:-0.0.0.0/0 ::/0}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
@@ -85,6 +98,11 @@ services:
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
       ZALO_APP_SECRET: ${ZALO_APP_SECRET:-}
+      # Máy chủ Zalo Mini App Checkout mà backend GỌI RA (`get-status`…).
+      # RỖNG = gọi Zalo THẬT. Chỉ điền khi chạy thử sandbox — sai gốc này thì
+      # lượt tra khoản tiền hỏng, hiện ở log backend chứ không ở màn hình.
+      # Dấu `-` (không phải `:-`) là cố ý: biến chưa khai vẫn truyền vào dạng rỗng.
+      ZALO_CHECKOUT_API_BASE: ${ZALO_CHECKOUT_API_BASE-}
       # Origin được phép gọi API từ TRÌNH DUYỆT. Chỉ Zalo Mini App cần khai:
       # màn của khách chạy trong webview Zalo, origin `https://h5.zdn.vn`.
       # Trang quản trị KHÔNG cần có mặt ở đây — nó gọi backend qua BFF `/api`
