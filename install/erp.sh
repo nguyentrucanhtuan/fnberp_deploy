@@ -231,6 +231,10 @@ GEMINI_MODEL=gemini-2.5-flash
 
 # ── Zalo Mini App (tuỳ chọn) ──
 ZALO_APP_SECRET=
+# Origin được phép gọi API từ trình duyệt. Webview Zalo = https://h5.zdn.vn.
+# Trang quản trị không cần khai (đi BFF /api, cùng origin qua Caddy).
+# ⚠️ Để TRỐNG = mọi website trên Internet gọi được /shop/*.
+CORS_ALLOWED_ORIGINS=https://h5.zdn.vn
 EOF
   chmod 600 .env
   ok "Đã sinh .env (mật khẩu DB + JWT_SECRET + AUTH_SECRET ngẫu nhiên)"

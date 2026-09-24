@@ -85,6 +85,17 @@ services:
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
       ZALO_APP_SECRET: ${ZALO_APP_SECRET:-}
+      # Origin được phép gọi API từ TRÌNH DUYỆT. Chỉ Zalo Mini App cần khai:
+      # màn của khách chạy trong webview Zalo, origin `https://h5.zdn.vn`.
+      # Trang quản trị KHÔNG cần có mặt ở đây — nó gọi backend qua BFF `/api`
+      # của Next (phía máy chủ), và Caddy đã gộp cả hai về CÙNG một origin.
+      # Màn bếp/màn khách cũng không: WebSocket tự so `Origin` với `Host`
+      # (biến riêng `WS_ALLOWED_ORIGINS`).
+      # Dấu `-` (không phải `:-`) là cố ý: biến chưa khai vẫn truyền vào dạng
+      # RỖNG. ⚠️ RỖNG = backend phản chiếu MỌI origin, tức mọi website gọi được
+      # `/shop/*`. Quán cài mới nhận sẵn giá trị đúng trong .env; quán cũ giữ
+      # nguyên .env khi cập nhật nên phải tự thêm dòng này.
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS-}
       # Ảnh sản phẩm — ghi vào volume `uploads` (xem mục sao lưu ở README).
       UPLOADS_DIR: /app/uploads
       # Rỗng = URL ảnh TƯƠNG ĐỐI → xem ERP bằng địa chỉ nào (IP LAN · domain ·
