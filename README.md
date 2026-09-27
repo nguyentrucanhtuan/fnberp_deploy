@@ -356,13 +356,118 @@ Không cần nhập lại token — máy đã ghi nhớ từ lần cài đầu.
 
 Cấu hình và **toàn bộ dữ liệu được giữ nguyên**.
 
-Bản mới có thay đổi cấu trúc dữ liệu (migration) thì backend **tự sao lưu trước** rồi mới đổi — xem [§8 · Cổng sao lưu tự động](#cổng-sao-lưu-tự-động-trước-mỗi-lần-nâng-cấp). Sao lưu hỏng thì backend **không migrate, không mở cổng** — nhưng container có `restart: unless-stopped` nên sẽ **tự khởi động lại và thử lại cổng** (kèm một lượt `pg_dump` đầy đủ) mỗi lần. `docker compose logs backend` nêu lý do; trong lúc điều tra hãy `docker compose stop backend` để nó thôi thử lại.
+Bản mới có **migration một chiều** thì backend **không** tự chạy nó — xem [Migration một chiều](#migration-một-chiều--chạy-tay-có-người-ngồi-trước-màn-hình) bên dưới. Bản mới có thay đổi cấu trúc dữ liệu (migration) thường thì backend **tự sao lưu trước** rồi mới đổi — xem [§8 · Cổng sao lưu tự động](#cổng-sao-lưu-tự-động-trước-mỗi-lần-nâng-cấp). Sao lưu hỏng thì backend **không migrate, không mở cổng** — nhưng container có `restart: unless-stopped` nên sẽ **tự khởi động lại và thử lại cổng** (kèm một lượt `pg_dump` đầy đủ) mỗi lần. `docker compose logs backend` nêu lý do; trong lúc điều tra hãy `docker compose stop backend` để nó thôi thử lại.
 
 > Nếu báo `denied` / `unauthorized`: token đã hết hạn hoặc bị thu hồi → xin token mới rồi chạy:
 > ```bash
 > cd ~ && curl -fsSL https://raw.githubusercontent.com/nguyentrucanhtuan/fnberp_deploy/main/install/ubuntu.sh \
 >   | GHCR_TOKEN=<token-mới> bash -s -- --update
 > ```
+
+### Migration một chiều — chạy tay, có người ngồi trước màn hình
+
+Một số bản nâng cấp mang **migration một chiều**: thay đổi cấu trúc dữ liệu **không có đường lùi dữ liệu** (vd đổi kiểu cột giờ, thêm cột quán). Backend **không bao giờ** tự chạy loại này lúc khởi động — kể cả khi container tự khởi động lại lúc 2 giờ sáng. Người vận hành chạy tay, trong cửa sổ đã hẹn.
+
+**Nhận biết.** Sau `docker compose pull && docker compose up -d`, log backend có dòng:
+
+```
+WARN [BackupGate] Migration MỘT CHIỀU đang chờ chạy tay (boot không chạy): <TênMigration> — lệnh: docker compose run --rm --no-deps backend node dist/oneway-migrate <TênMigration> …
+```
+
+Phần mềm **vẫn bán bình thường** trên cấu trúc cũ. Nhưng nếu bản mới còn có migration thường **phụ thuộc** vào migration một chiều đó, backend **từ chối khởi động** với câu `Cần chạy tay <TênMigration> trước (migration một chiều) — … migration thường đứng sau nó đang bị chặn: …`. Khi đó quán đang dừng bán — chạy tay ngay theo các bước dưới (hoặc quay về ảnh cũ nếu chưa tới cửa sổ).
+
+**Cửa sổ.** Chỉ chạy **ngoài giờ bán**. Trần **30 phút** mỗi pha, mỗi quán, tính từ lúc dừng backend tới lúc backend lắng nghe lại. Thời gian lấy từ lượt chạy thử trên **bản sao Coffeetree** ở local (bắt buộc trước khi lên lịch — dòng `✅ Đã chạy … trong X s` của lệnh). Bản sao đo **vượt 30 phút ⇒ chia nhỏ migration**, không nới trần: gom theo **cụm bảng cùng ranh giới ngày** (`orders` + `account_journal_entries` + `pos_sessions` + `order_loyalty` chung một cửa sổ), mỗi cụm một cửa sổ, chạy lại bài kiểm đơn 00:30 sau mỗi cửa sổ.
+
+**Kiểm chỗ trống trước (E-06).** Đổi kiểu cột viết lại cả bảng — cần khoảng **2 × bảng lớn nhất**, cộng thêm bản dump nằm cùng đĩa. Lệnh chạy tay in sẵn `Kích thước DB` và 5 bảng lớn nhất *trước* khi chạm schema; đối chiếu với:
+
+```bash
+df -h /var/lib/docker
+```
+
+Chỗ trống < kích thước DB + 2 × bảng lớn nhất + bản dump ⇒ **không mở cửa sổ** (giải phóng đĩa trước).
+
+**Các bước** — chạy trong `tmux` (hoặc `screen`) để đứt SSH không cắt ngang lệnh; nối lại bằng `tmux attach`:
+
+```bash
+tmux new -s migrate
+cd ~/fnberp
+docker compose stop backend           # 1. dừng bán — không ai ghi vào DB trong lúc đổi
+docker compose run --rm --no-deps backend node dist/oneway-migrate <TênMigration>   # 2.
+docker compose up -d backend          # 3. mở lại; kiểm log "Backend đang chạy"
+```
+
+Lệnh ở bước 2 làm theo thứ tự cố định:
+
+1. Kiểm tên — phải là migration một chiều (sai tên ⇒ mã 2, in danh sách tên có). Đã chạy rồi ⇒ in `đã chạy`, thoát 0, không làm gì.
+2. In kích thước DB + bảng lớn nhất.
+3. **Cổng sao lưu bắt buộc**: `pg_dump` vào volume `backups` + kiểm đọc lại ba lớp ([§8](#cổng-sao-lưu-tự-động-trước-mỗi-lần-nâng-cấp)). Hỏng ⇒ **không đổi gì**, thoát 1.
+4. Chạy migration một chiều **cùng mọi migration thường đứng trước nó** trong **một transaction** (hạn chờ khoá 60 giây). Lỗi ⇒ rollback cả lô, thoát 1. Migration thường đứng sau nó để lần khởi động ở bước 3.
+5. Đối chiếu lại bảng `migrations`, in `✅ Đã chạy … trong X s (Y ms, một transaction)`.
+
+Có nhiều migration một chiều đang chờ thì chạy **theo thứ tự thời gian** — lệnh từ chối và nêu tên cái phải chạy trước.
+
+#### Đứt giữa chừng — mất điện, đứt SSH, tiến trình bị giết
+
+Migration nằm trọn trong một transaction: Postgres chỉ ghi khi nhận `COMMIT`. Đứt trước đó ⇒ **không có gì được ghi**. Nhưng phiên phía Postgres **không chết ngay** — nó chạy nốt câu lệnh đang chạy (một `ALTER` lớn có thể vài phút) rồi mới phát hiện mất kết nối và rollback. Trong lúc đó nó **vẫn giữ khoá bảng**. Bài diễn tập đã đo đúng hiện tượng này.
+
+**Chạy tiếp thế nào:**
+
+```bash
+cd ~/fnberp
+# 0. Container của lượt trước còn sống không? Đứt SSH thường KHÔNG giết
+#    `docker compose run` — nó vẫn chạy và có thể COMMIT xong. Còn dòng nào ⇒
+#    CHỜ nó thoát (docker logs -f <tên> để xem kết quả), đừng chạy lượt thứ hai.
+docker ps --filter "label=com.docker.compose.oneoff=True" --format '{{.Names}}  {{.Status}}  {{.Command}}'
+docker compose ps -a
+#    (chạy song song thì lượt sau cũng tự từ chối: "đang có một lượt oneway-migrate khác")
+# a. Còn phiên mồ côi nào của lượt trước? (có dòng ⇒ nó còn giữ khoá)
+docker compose exec -T postgres psql -U trcf trcf_erp -c \
+  "SELECT pid, state, now() - query_start AS da_chay, left(query, 80) FROM pg_stat_activity
+    WHERE datname = current_database() AND pid <> pg_backend_pid() AND state <> 'idle'"
+#    Chờ nó tự kết thúc, hoặc cắt hẳn (an toàn — chưa COMMIT thì chỉ rollback):
+docker compose exec -T postgres psql -U trcf trcf_erp -c "SELECT pg_terminate_backend(<pid>)"
+# b. Migration đã ghi nhận chưa?
+docker compose exec -T postgres psql -U trcf trcf_erp -c \
+  "SELECT id, name FROM migrations ORDER BY id DESC LIMIT 5"
+# c. Cấu trúc bảng đang là gì? (vd kiểu cột của bảng mà migration đổi)
+docker compose exec -T postgres psql -U trcf trcf_erp -c \
+  "SELECT table_name, column_name, data_type FROM information_schema.columns WHERE table_name = '<bảng>'"
+# d. Chạy lại đúng lệnh bước 2 — an toàn khi chạy lặp:
+docker compose run --rm --no-deps backend node dist/oneway-migrate <TênMigration>
+```
+
+- (b) **có** dòng `<TênMigration>` ⇒ đứt **sau** `COMMIT`: migration đã xong, (d) sẽ in `đã chạy`. Chỉ cần bước 3.
+- (b) **không có** dòng ⇒ đã rollback trọn: cấu trúc ở (c) là cấu trúc cũ. (d) chụp một bản dump mới rồi chạy lại từ đầu.
+- (d) báo `lock timeout` ⇒ vẫn còn phiên giữ khoá (backend chưa dừng, hoặc phiên mồ côi) — quay lại (a).
+
+**Quay về bản dump thế nào** (migration xong nhưng phát hiện sai, hoặc không muốn chạy tiếp): mỗi lượt đã chụp một bản dump **ngay trước khi đổi**, nằm trong volume `backups` — xem bằng lệnh chạy được cả khi backend đang dừng (đang trong cửa sổ): `docker compose run --rm --no-deps --entrypoint ls backend -lh /backups` (bản mới nhất ở cuối). Khôi phục đè lên DB của quán:
+
+```bash
+cd ~/fnberp
+docker compose stop backend
+docker compose cp backend:/backups/trcf_erp-<ts>.dump ./restore.dump
+docker compose cp ./restore.dump postgres:/tmp/restore.dump
+docker compose exec -T postgres dropdb -U trcf --force trcf_erp
+docker compose exec -T postgres createdb -U trcf trcf_erp
+docker compose exec -T postgres pg_restore -U trcf --no-owner --no-privileges --exit-on-error \
+  -d trcf_erp /tmp/restore.dump
+docker compose up -d backend
+```
+
+Sau khi khôi phục, backend mở lại trên **cấu trúc cũ** và log lại cảnh báo migration một chiều đang chờ — đúng ý (chưa chạy lại cho tới cửa sổ sau). Riêng khi bản mới có migration thường phụ thuộc vào nó (boot báo `Cần chạy tay … trước`), backend sẽ từ chối khởi động: phải chạy lại migration trong cửa sổ khác, hoặc tạm về ảnh của bản trước.
+
+*(Cùng lệnh `createdb` + `pg_restore` như [§8 · Khôi phục một bản dump](#khôi-phục-một-bản-dump-xuống-postgres-17-máy-local), chỉ khác là khôi phục vào DB của quán thay vì DB local. Mọi đơn bán **sau** giờ chụp dump sẽ mất — chỉ dùng khi dữ liệu sai nặng hơn.)*
+
+**Đảo bằng `down()`** (không mất đơn bán sau đó, khi migration có `down()` đã diễn tập trên bản sao): chỉ đảo được migration **chạy sau cùng** — có migration nào chạy sau nó thì lệnh từ chối và nêu tên.
+
+> ⚠️ Cửa sổ `--down` đóng ngay khi `docker compose up -d backend` (bước 3) chạy các migration thường **đứng sau** mà lệnh đã để lại — từ đó `--down <TênMigration>` bị từ chối (`không phải dòng mới nhất`). Muốn đảo sau lúc đó phải `migration:revert` từng migration thường mới hơn trước rồi mới `--down` — nhưng ảnh backend hiện **không** chạy được `migration:revert` (`dist/data-source.js` cần gói `dotenv` không có trong ảnh; đo 27/09), nên ở máy quán đường thực tế là **quay về dump**. Muốn giữ đường `--down`: kiểm kết quả **trước** bước 3.
+
+```bash
+docker compose stop backend
+docker compose run --rm --no-deps backend node dist/oneway-migrate --down <TênMigration>
+```
+
+Lệnh cũng chụp dump trước khi đảo. `pnpm migration:revert` / `typeorm migration:revert` **không** đảo được migration một chiều (báo "not found in source code").
 
 ---
 
