@@ -356,6 +356,8 @@ Không cần nhập lại token — máy đã ghi nhớ từ lần cài đầu.
 
 Cấu hình và **toàn bộ dữ liệu được giữ nguyên**.
 
+Bản mới có thay đổi cấu trúc dữ liệu (migration) thì backend **tự sao lưu trước** rồi mới đổi — xem [§8 · Cổng sao lưu tự động](#cổng-sao-lưu-tự-động-trước-mỗi-lần-nâng-cấp). Sao lưu hỏng thì backend **không migrate, không mở cổng** — nhưng container có `restart: unless-stopped` nên sẽ **tự khởi động lại và thử lại cổng** (kèm một lượt `pg_dump` đầy đủ) mỗi lần. `docker compose logs backend` nêu lý do; trong lúc điều tra hãy `docker compose stop backend` để nó thôi thử lại.
+
 > Nếu báo `denied` / `unauthorized`: token đã hết hạn hoặc bị thu hồi → xin token mới rồi chạy:
 > ```bash
 > cd ~ && curl -fsSL https://raw.githubusercontent.com/nguyentrucanhtuan/fnberp_deploy/main/install/ubuntu.sh \
@@ -372,6 +374,7 @@ Dữ liệu nằm trên **chính máy chủ này**, trong **hai** volume Docker:
 |---|---|---|
 | `pgdata` | Đơn hàng, kho, khách, sổ quỹ, nhân sự | `pg_dump` |
 | `uploads` | **Ảnh sản phẩm** | `tar` (⚠️ `pg_dump` KHÔNG chứa ảnh) |
+| `backups` | Bản dump **tự động** trước mỗi lần nâng cấp có migration | tự sinh — xem mục cổng sao lưu dưới |
 
 Máy hỏng ổ cứng mà không có bản sao là **mất sạch**.
 
@@ -409,6 +412,66 @@ mkdir -p ~/backups
 ```
 
 *(giữ 30 ngày gần nhất; định kỳ copy thư mục `~/backups` sang ổ cứng ngoài hoặc cloud)*
+
+### Cổng sao lưu tự động trước mỗi lần nâng cấp
+
+Mỗi lần backend khởi động, **trước khi** đổi cấu trúc dữ liệu:
+
+1. **Không có migration chờ** → không sao lưu, chạy như thường.
+2. **Có migration chờ** → `pg_dump` ra volume `backups` (trên chính máy quán), rồi **kiểm bản dump đọc lại được** theo ba lớp: mục lục đọc được · số bảng khớp CSDL · đọc **toàn phần** tệp thành công. Chỉ khi đủ ba lớp mới migrate.
+3. **Bản dump hỏng ở bất kỳ lớp nào** (đĩa đầy, `pg_dump` bị giết, tệp cụt, thiếu/lệch client Postgres) → tiến trình backend **thoát, không migrate, không mở cổng**, log nêu lý do kèm dung lượng trống. Dữ liệu còn nguyên như trước khi cập nhật. Container có `restart: unless-stopped` nên Docker **khởi động lại và chạy lại cổng** (mỗi lần một lượt `pg_dump` đầy đủ, tải lên CSDL) cho tới khi hết lỗi.
+
+Giữ **5** bản mới nhất (đổi bằng `BACKUP_KEEP=` trong `.env`). Tên tệp: `trcf_erp-<YYYYMMDDTHHmmssZ>.dump` (giờ UTC).
+
+**Bản sao thứ hai lên Cloudflare R2 (tuỳ chọn).** Điền vào `.env` rồi `docker compose up -d`:
+
+```bash
+R2_ACCOUNT_ID=...            # Cloudflare → R2 → Account ID
+R2_ACCESS_KEY_ID=...         # R2 API token — CHỈ GHI, giới hạn đúng bucket này (xem dưới)
+R2_SECRET_ACCESS_KEY=...
+R2_BACKUP_BUCKET=trcf-backups
+# R2_ACCOUNT_ID phải là 32 ký tự hex thường; R2_BACKUP_PREFIX tự thêm "/" cuối
+R2_BACKUP_PREFIX=quan-a/     # tuỳ chọn — tách thư mục theo quán
+```
+
+Đẩy R2 là **cố-gắng-hết-sức**: mạng hỏng hay R2 từ chối thì chỉ cảnh báo trong log rồi vẫn nâng cấp — bản trong volume `backups` mới là bản bắt buộc. Thiếu một biến ⇒ bỏ qua, log nêu biến thiếu.
+
+- **Token:** cổng chỉ gửi **một lệnh PUT** — cấp quyền **chỉ ghi** (Object Write) nếu Cloudflare cho, và giới hạn đúng bucket sao lưu. Máy quán lộ token thì kẻ gian không đọc được các bản cũ.
+- **Xoay vòng trên R2:** cổng **không** xoá gì trên R2 (`BACKUP_KEEP` chỉ áp cho volume local). Đặt **lifecycle rule** cho bucket (vd xoá object sau 90 ngày) để bucket không phình mãi.
+- **Nội dung:** bản dump **không mã hoá** và chứa dữ liệu khách hàng (tên, SĐT, đơn hàng, sổ quỹ). Để bucket riêng tư, không bật public access.
+
+> ⚠️ **Không có biến nào tắt cổng.** Backend không lên vì sao lưu hỏng: `docker compose stop backend` (thôi vòng thử lại), đọc `docker compose logs backend`, xử lý nguyên nhân (giải phóng đĩa…) rồi `docker compose up -d` lại. Đừng tìm cách vòng qua — đó là bản sao duy nhất trước một thay đổi một chiều.
+
+**Xem các bản đang có:**
+
+```bash
+cd ~/fnberp
+docker compose exec backend ls -lh /backups
+```
+
+### Khôi phục một bản dump xuống Postgres 17 (máy local)
+
+Nguồn cho diễn tập "local trước": khôi phục bản sao của quán xuống máy local, chạy migration, E2E xanh rồi mới lên lịch cho máy quán.
+
+Dump dạng `-Fc` (custom) — **phải** khôi phục bằng `pg_restore` **major 17** (bản 15/16 không đọc được). Không cần cài Postgres 17 lên máy: chạy trong container.
+
+```bash
+# 1. Trên máy quán: chép thư mục backups ra ngoài (chạy được cả khi backend đang dừng)
+cd ~/fnberp
+docker compose cp backend:/backups ~/trcf-backups
+# 2. Mang tệp về máy local (vd: scp quan:~/trcf-backups/trcf_erp-<ts>.dump .)
+# 3. Trên máy local: Postgres 17 tạm, cổng 55432
+docker run -d --name trcf-restore -e POSTGRES_USER=trcf -e POSTGRES_PASSWORD=restore \
+  -p 55432:5432 postgres:17-alpine
+docker cp trcf_erp-<ts>.dump trcf-restore:/tmp/restore.dump
+docker exec trcf-restore createdb -U trcf trcf_restore
+docker exec trcf-restore pg_restore -U trcf --no-owner --no-privileges --exit-on-error \
+  -d trcf_restore /tmp/restore.dump
+# 4. Trỏ backend dev vào đó:
+#    DATABASE_URL=postgresql://trcf:restore@localhost:55432/trcf_restore
+```
+
+*(`createdb`/`pg_restore` có thể phải chờ vài giây sau `docker run` để Postgres khởi động xong. Bài diễn tập `trcf_erp_backend/scripts/backup-gate-drill.sh` chạy đúng hai lệnh `createdb` + `pg_restore` này và so số bảng với nguồn.)*
 
 > ⚠️ **Tuyệt đối không chạy `docker compose down -v`** — cờ `-v` xoá volume = **mất toàn bộ dữ liệu**.
 

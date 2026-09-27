@@ -122,8 +122,24 @@ services:
       # về APP_URL — APP_URL là một địa chỉ cố định, chỉ máy tới được địa chỉ đó
       # mới thấy ảnh. Chỉ điền khi ảnh ở CDN/R2 thật.
       UPLOADS_BASE_URL: ${UPLOADS_BASE_URL-}
+      # ── Cổng sao lưu (551.1) ── Có migration chờ ⇒ backend `pg_dump` vào volume
+      # `backups`, kiểm đọc lại được rồi MỚI migrate; dump hỏng ⇒ backend dừng,
+      # không migrate. Không có biến nào tắt cổng (xem README §8).
+      # Số bản giữ lại (mặc định 5, tối thiểu 1).
+      BACKUP_KEEP: ${BACKUP_KEEP:-5}
+      # Bản sao thứ hai lên Cloudflare R2 — CỐ-GẮNG-HẾT-SỨC: lỗi mạng/R2 chỉ
+      # cảnh báo rồi vẫn migrate; thiếu một biến bắt buộc ⇒ bỏ qua có log.
+      # Dấu `-` (không phải `:-`) là cố ý: biến chưa khai vẫn truyền vào dạng rỗng.
+      R2_ACCOUNT_ID: ${R2_ACCOUNT_ID-}
+      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID-}
+      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY-}
+      R2_BACKUP_BUCKET: ${R2_BACKUP_BUCKET-}
+      # Tiền tố khoá trong bucket, vd `quan-a/` (tuỳ chọn — rỗng = gốc bucket).
+      R2_BACKUP_PREFIX: ${R2_BACKUP_PREFIX-}
     volumes:
       - uploads:/app/uploads
+      # Bản dump của cổng sao lưu — nằm trên CHÍNH máy quán.
+      - backups:/backups
     healthcheck:
       # Bất kỳ HTTP response nào = process sống. start_period chờ migration chạy xong.
       test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:3333/auth/login',r=>process.exit(0)).on('error',()=>process.exit(1))"]
@@ -157,5 +173,7 @@ volumes:
   pgdata:
   # Ảnh sản phẩm. `pg_dump` KHÔNG chứa ảnh — phải sao lưu riêng (xem README).
   uploads:
+  # Bản dump tự động trước mỗi lần migrate (cổng sao lưu 551.1) — xem README §8.
+  backups:
   caddy_data:
   caddy_config:
