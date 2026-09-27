@@ -344,6 +344,44 @@ Máy chủ mất điện rồi bật lại: phần mềm **tự chạy lại**, 
 > Nếu báo `permission denied` khi gõ `docker`: đăng xuất/đăng nhập lại một lần
 > (hoặc gõ `newgrp docker`) — do tài khoản vừa được thêm vào nhóm `docker`.
 
+### Múi giờ quán — ba luật
+
+Máy chủ luôn lưu **mốc thời gian tuyệt đối**; múi giờ quán (`general.timezone`, tên vùng
+IANA như `Asia/Ho_Chi_Minh`) chỉ là "kính lúp" quyết định **ngày nào là hôm nay** trong báo
+cáo, biên lọc theo ngày của các màn (đơn hàng, sổ quỹ, kho, sản xuất…) và giờ in trên bill.
+Giờ của container/máy chủ (`TZ`) **không** được dùng vào việc này.
+
+1. **Đặt múi giờ lúc mở quán, rồi đừng đổi.** Đổi `general.timezone` về sau làm **ngày cũ
+   dịch chỗ** trong báo cáo (một đơn 23:30 có thể nhảy sang ngày hôm sau), trong khi những thứ
+   đã chốt **không dịch theo**: snapshot đóng ca và hoá đơn GTGT đã phát hành giữ nguyên con
+   số lúc chốt. Báo cáo và chứng từ sẽ lệch nhau. ⇒ Chỉ đổi để **sửa khai sai**, và sửa **càng
+   sớm càng tốt** (ít ngày cũ phải dịch). Đọc giá trị đang dùng:
+
+   ```bash
+   docker compose exec -T postgres psql -U trcf trcf_erp -c \
+     "SELECT value FROM system_settings WHERE module = 'general' AND key = 'timezone'"
+   ```
+
+   Đổi đúng cách: vào màn **Cấu hình** (tài khoản superuser), chọn múi giờ rồi lưu — backend
+   nạp lại múi giờ ngay khi lưu. Sửa thẳng `system_settings` bằng SQL thì backend **không biết**:
+   nó vẫn dùng giá trị cũ trong bộ nhớ cho tới khi khởi động lại (`docker compose restart
+   backend`).
+
+2. **Nâng Node là nghĩa vụ bảo trì.** Backend đọc luật múi giờ (kể cả giờ mùa hè) qua `Intl`,
+   mà `Intl` dùng bảng ICU **nhúng trong bản Node** của ảnh — KHÔNG đọc `/usr/share/zoneinfo`.
+   Khi một nước đổi luật giờ, cài `tzdata` **không cứu được**: phải cập nhật lên ảnh có Node
+   mới hơn. Quán Việt Nam (không có giờ mùa hè) thì vô hại; quán ở vùng có đổi giờ phải theo
+   dõi. Xem bản dữ liệu múi giờ đang chạy:
+
+   ```bash
+   docker compose exec -T backend node -p process.versions.tz
+   ```
+
+3. **Chưa nhận quán ngoài UTC+7.** Frontend (khoảng 40 màn) còn định dạng giờ theo **múi giờ
+   của trình duyệt** chứ chưa theo `general.timezone`. Ở Việt Nam hai thứ trùng nhau nên đúng;
+   quán ở múi giờ khác sẽ thấy giờ hiển thị lệch với giờ in/báo cáo. Chưa mở bán cho quán
+   ngoài UTC+7 cho tới khi frontend được sửa.
+
 ---
 
 ## 7. Cập nhật phiên bản mới
