@@ -406,6 +406,52 @@ Lệnh ở bước 2 làm theo thứ tự cố định:
 
 Có nhiều migration một chiều đang chờ thì chạy **theo thứ tự thời gian** — lệnh từ chối và nêu tên cái phải chạy trước.
 
+#### Ví dụ đầu tiên — `TimestamptzEverywhere1783741000000` (đổi mọi cột giờ sang `timestamptz`)
+
+Đổi **mọi** cột `timestamp without time zone` sang `timestamptz` bằng một nhánh `AT TIME ZONE 'UTC'` — dữ liệu không đổi giá trị (mốc tuyệt đối giữ nguyên), chỉ đổi kiểu. Trên bản sao Coffeetree 27/09: 75 cột, **0,5 s** phần migrate, **0,8 s** kể cả sao lưu. Migration **dừng trước khi đổi bất cứ gì** nếu một trong các điều sau chưa đạt:
+
+- quán **chưa có** `general.timezone`, hoặc giá trị không phải tên vùng IANA sạch (khoảng trắng thừa, `+07:00`, `Etc/GMT-7`, tên Postgres/Node không biết) — không có giá trị mặc định;
+- chấm công (`attendance.check_in/check_out`) chưa là `timestamptz` (migration 31/08 chưa chạy);
+- có dòng mà giờ lưu lệch **> 1 giờ** so với mốc đối chiếu độc lập (giờ tạo đơn ↔ giờ đơn, bút toán thu ↔ giờ đơn, giờ mở ca ↔ giờ ghi ca, ngày trong mã `PO`/`MO`/`CK` ↔ giờ tạo).
+
+**1. Đặt ĐÚNG múi giờ quán TRƯỚC.** ⚠️ Lần khởi động đầu tiên của ảnh mới **tự gieo** `general.timezone = 'Asia/Ho_Chi_Minh'` cho mọi quán còn thiếu dòng này (dữ liệu mẫu của Cấu hình). Quán ở Việt Nam thì không cần làm gì thêm ngoài đọc lại; quán **không** ở Việt Nam phải đặt đúng vùng **trước cửa sổ** — nếu không migration sẽ chạy với giờ Việt Nam. Ghi đè (chạy lặp được) rồi đọc lại:
+
+```bash
+docker compose exec -T postgres psql -U trcf trcf_erp -c \
+  "INSERT INTO system_settings (module, key, value, value_type, description)
+   VALUES ('general', 'timezone', 'Asia/Ho_Chi_Minh', 'str', 'Múi giờ quán (IANA) — đặt lúc mở quán')
+   ON CONFLICT (module, key) DO UPDATE SET value = EXCLUDED.value"
+docker compose exec -T postgres psql -U trcf trcf_erp -c \
+  "SELECT value FROM system_settings WHERE module = 'general' AND key = 'timezone'"
+```
+
+(Thay `'Asia/Ho_Chi_Minh'` bằng vùng của quán, vd `'Asia/Bangkok'`.)
+
+**2. Kiểm trước-khi-bay — chỉ đọc**, chạy được cả lúc quán đang bán (nên chạy vài ngày trước cửa sổ):
+
+```bash
+docker compose run --rm --no-deps backend node dist/timestamptz-preflight
+```
+
+Thoát 0 + `✅ Sạch` ⇒ lên lịch cửa sổ. Thoát 1 ⇒ đọc từng điều chặn: thiếu/sai múi giờ thì ghi đè bằng lệnh ở bước 1; dòng lệch mốc thì lệnh in tên phép (`orders-created`, `journal-order-payment`, `pos-session-start`, `code-date:<bảng>`) và tối đa 20 dòng `id` + hai giá trị — **soi tay từng dòng**. Dòng nào đúng là dữ liệu thật (vd phiếu nhập ghi ngày khác ngày tạo), liệt kê để bỏ qua:
+
+```bash
+docker compose run --rm --no-deps -e TIMESTAMPTZ_PREFLIGHT_ACCEPT="orders-created:170,code-date:purchases:12" \
+  backend node dist/timestamptz-preflight
+```
+
+Dòng đã liệt kê được **in ra** là "đã chấp nhận sau khi soi tay"; gõ sai khuôn (`<phép>:<id>`) thì lệnh dừng. Dòng lệch vì dữ liệu hỏng thì sửa dữ liệu, đừng liệt kê. Riêng dòng `code-date:*` có giờ tạo trong khoảng **01:00–07:00 giờ quán** là hệ quả của mã phiếu mang ngày **UTC** (bộ sinh mã `PO`/`MO`/`CK` đọc đồng hồ container chạy UTC) — dữ liệu đúng: soi lại rồi đưa vào `TIMESTAMPTZ_PREFLIGHT_ACCEPT`.
+
+**3. Trong cửa sổ** — các bước ở trên, cùng biến `-e TIMESTAMPTZ_PREFLIGHT_ACCEPT=…` nếu bước 2 cần:
+
+```bash
+docker compose stop backend
+docker compose run --rm --no-deps backend node dist/oneway-migrate TimestamptzEverywhere1783741000000
+docker compose up -d backend
+```
+
+Log in danh sách từng `bảng.cột` sẽ đổi, kết quả kiểm trước, rồi **kiểm lại sau trong cùng transaction** (đếm cột trần = 0, checksum giá trị từng cột trước = sau, chấm công không đổi, mốc đối chiếu vẫn 0 lệch) — sai ⇒ rollback cả lô. Danh sách cột đã đổi lưu ở `migration_oneway.timestamptz_552_columns`; `--down` chỉ đảo đúng các cột đó rồi xoá bảng này.
+
 #### Đứt giữa chừng — mất điện, đứt SSH, tiến trình bị giết
 
 Migration nằm trọn trong một transaction: Postgres chỉ ghi khi nhận `COMMIT`. Đứt trước đó ⇒ **không có gì được ghi**. Nhưng phiên phía Postgres **không chết ngay** — nó chạy nốt câu lệnh đang chạy (một `ALTER` lớn có thể vài phút) rồi mới phát hiện mất kết nối và rollback. Trong lúc đó nó **vẫn giữ khoá bảng**. Bài diễn tập đã đo đúng hiện tượng này.
