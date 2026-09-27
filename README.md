@@ -447,6 +447,9 @@ Dòng đã liệt kê được **in ra** là "đã chấp nhận sau khi soi tay
 ```bash
 docker compose stop backend
 docker compose run --rm --no-deps backend node dist/oneway-migrate TimestamptzEverywhere1783741000000
+# bước 2 cần ACCEPT thì thay dòng trên bằng (cùng danh sách đã soi tay):
+# docker compose run --rm --no-deps -e TIMESTAMPTZ_PREFLIGHT_ACCEPT="orders-created:170" \
+#   backend node dist/oneway-migrate TimestamptzEverywhere1783741000000
 docker compose up -d backend
 ```
 
