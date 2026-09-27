@@ -376,7 +376,7 @@ WARN [BackupGate] Migration MỘT CHIỀU đang chờ chạy tay (boot không ch
 
 Phần mềm **vẫn bán bình thường** trên cấu trúc cũ. Nhưng nếu bản mới còn có migration thường **phụ thuộc** vào migration một chiều đó, backend **từ chối khởi động** với câu `Cần chạy tay <TênMigration> trước (migration một chiều) — … migration thường đứng sau nó đang bị chặn: …`. Khi đó quán đang dừng bán — chạy tay ngay theo các bước dưới (hoặc quay về ảnh cũ nếu chưa tới cửa sổ).
 
-**Cửa sổ.** Chỉ chạy **ngoài giờ bán**. Trần **30 phút** mỗi pha, mỗi quán, tính từ lúc dừng backend tới lúc backend lắng nghe lại. Thời gian lấy từ lượt chạy thử trên **bản sao Coffeetree** ở local (bắt buộc trước khi lên lịch — dòng `✅ Đã chạy … trong X s` của lệnh). Bản sao đo **vượt 30 phút ⇒ chia nhỏ migration**, không nới trần: gom theo **cụm bảng cùng ranh giới ngày** (`orders` + `account_journal_entries` + `pos_sessions` + `order_loyalty` chung một cửa sổ), mỗi cụm một cửa sổ, chạy lại bài kiểm đơn 00:30 sau mỗi cửa sổ.
+**Cửa sổ.** Chỉ chạy **ngoài giờ bán**. Trần **30 phút** mỗi pha, mỗi quán, tính từ lúc dừng backend tới lúc backend lắng nghe lại. Thời gian lấy từ lượt chạy thử trên **bản sao Coffeetree** ở local (bắt buộc trước khi lên lịch). Dòng `✅ Đã chạy … trong X s` chỉ là phần migrate; ước cửa sổ bằng số **`Tổng kể cả sao lưu`** cộng thời gian bước 3 (boot chụp thêm một bản dump nếu còn migration thường để lại) — đo cả hai trên bản sao. Bản sao đo **vượt 30 phút ⇒ chia nhỏ migration**, không nới trần: gom theo **cụm bảng cùng ranh giới ngày** (`orders` + `account_journal_entries` + `pos_sessions` + `order_loyalty` chung một cửa sổ), mỗi cụm một cửa sổ, chạy lại bài kiểm đơn 00:30 sau mỗi cửa sổ.
 
 **Kiểm chỗ trống trước (E-06).** Đổi kiểu cột viết lại cả bảng — cần khoảng **2 × bảng lớn nhất**, cộng thêm bản dump nằm cùng đĩa. Lệnh chạy tay in sẵn `Kích thước DB` và 5 bảng lớn nhất *trước* khi chạm schema; đối chiếu với:
 
@@ -440,7 +440,7 @@ docker compose run --rm --no-deps backend node dist/oneway-migrate <TênMigratio
 - (b) **không có** dòng ⇒ đã rollback trọn: cấu trúc ở (c) là cấu trúc cũ. (d) chụp một bản dump mới rồi chạy lại từ đầu.
 - (d) báo `lock timeout` ⇒ vẫn còn phiên giữ khoá (backend chưa dừng, hoặc phiên mồ côi) — quay lại (a).
 
-**Quay về bản dump thế nào** (migration xong nhưng phát hiện sai, hoặc không muốn chạy tiếp): mỗi lượt đã chụp một bản dump **ngay trước khi đổi**, nằm trong volume `backups` — xem bằng lệnh chạy được cả khi backend đang dừng (đang trong cửa sổ): `docker compose run --rm --no-deps --entrypoint ls backend -lh /backups` (bản mới nhất ở cuối). Khôi phục đè lên DB của quán:
+**Quay về bản dump thế nào** (migration xong nhưng phát hiện sai, hoặc không muốn chạy tiếp): mỗi lượt đã chụp một bản dump **ngay trước khi đổi**, nằm trong volume `backups` — xem bằng lệnh chạy được cả khi backend đang dừng (đang trong cửa sổ): `docker compose run --rm --no-deps --entrypoint ls backend -lh /backups`. **Lấy đúng tệp lệnh chạy tay đã in** ở dòng `Đã sao lưu và kiểm đọc lại được: /backups/trcf_erp-<ts>.dump` — KHÔNG lấy bừa "bản mới nhất": bước 3 (`up -d backend`) chạy migration thường để lại thì tự chụp thêm một bản **sau khi đã đổi**, và mỗi lượt chạy lại cũng thêm một bản. Khôi phục đè lên DB của quán:
 
 ```bash
 cd ~/fnberp
