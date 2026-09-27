@@ -346,10 +346,15 @@ Máy chủ mất điện rồi bật lại: phần mềm **tự chạy lại**, 
 
 ### Múi giờ quán — ba luật
 
-Máy chủ luôn lưu **mốc thời gian tuyệt đối**; múi giờ quán (`general.timezone`, tên vùng
+Máy chủ lưu **mốc thời gian tuyệt đối**; múi giờ quán (`general.timezone`, tên vùng
 IANA như `Asia/Ho_Chi_Minh`) chỉ là "kính lúp" quyết định **ngày nào là hôm nay** trong báo
 cáo, biên lọc theo ngày của các màn (đơn hàng, sổ quỹ, kho, sản xuất…) và giờ in trên bill.
-Giờ của container/máy chủ (`TZ`) **không** được dùng vào việc này.
+Giờ của container/máy chủ (`TZ`) **không** được dùng vào việc này — nhưng **đừng đặt `TZ`**
+cho container `backend` hay `postgres`. Quán chưa chạy
+[`TimestamptzEverywhere1783741000000`](#ví-dụ-đầu-tiên--timestamptzeverywhere1783741000000-đổi-mọi-cột-giờ-sang-timestamptz)
+còn cột giờ lưu **giờ treo tường không múi giờ**: chúng chỉ đọc đúng khi backend và Postgres
+**cùng chạy UTC** (mặc định của ảnh). Đặt `TZ=Asia/Ho_Chi_Minh` cho một bên là mọi biên lọc
+theo ngày lệch 7 giờ mà **không báo lỗi gì**.
 
 1. **Đặt múi giờ lúc mở quán, rồi đừng đổi.** Đổi `general.timezone` về sau làm **ngày cũ
    dịch chỗ** trong báo cáo (một đơn 23:30 có thể nhảy sang ngày hôm sau), trong khi những thứ
