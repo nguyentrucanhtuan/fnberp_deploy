@@ -880,6 +880,39 @@ docker compose logs --since 24h backend | grep -E '2350[235]'
 
 Có sự cố ⇒ (1) **không** sang quán khách; (2) lùi quán đó bằng dump của lượt BIG + tag pha 1 (mất đơn sau giờ dump — cân nhắc với chủ quán); (3) ghi vào bảng nhật ký sự cố của sổ + một dòng `NHAT-KY.md`; (4) sửa, diễn tập lại trên bản sao, mở cửa sổ mới và **đếm lại 7 ngày từ đầu**.
 
+#### Tách vai database (555.1) — backend chạy bằng vai KHÔNG phải chủ bảng
+
+Từ 555.1 mọi bảng nghiệp vụ bật RLS + FORCE theo quán (migration thường `EnableShopRls1783741700000`, tự chạy lúc boot bằng vai chủ). RLS chỉ có tác dụng khi backend **không** chạy bằng superuser/chủ bảng — nên có ba vai:
+
+| Vai | Biến | Dùng cho |
+|---|---|---|
+| chủ (`DB_USER`, mặc định `trcf`) | `MIGRATION_DATABASE_URL` | migration, cổng sao lưu, migration một chiều, CLI kiểm |
+| ứng dụng (`trcf_app`) | `DATABASE_URL` | backend chạy hằng ngày — chỉ đọc/ghi dữ liệu, không đổi cấu trúc bảng |
+| bypass (`trcf_bypass`, BYPASSRLS) | — | quản trị TRCF (mở quán `seed-shop`), đếm toàn bảng |
+
+```bash
+cd ~/trcf-erp
+# 1. Dựng vai — chạy lại nhiều lần vô hại; cố ý KHÔNG đọc .env, gõ chuỗi tay:
+APP_PW=$(openssl rand -hex 24); BYP_PW=$(openssl rand -hex 24)
+docker compose run --rm --no-deps \
+  -e ADMIN_DATABASE_URL="postgresql://trcf:<DB_PASSWORD>@postgres:5432/trcf_erp" \
+  -e DB_APP_PASSWORD="$APP_PW" -e DB_BYPASS_PASSWORD="$BYP_PW" \
+  backend node dist/setup-db-roles
+# ✅ PASS … ⇒ ghi vai ứng dụng vào .env:
+printf '\nDB_APP_USER=trcf_app\nDB_APP_PASSWORD=%s\n' "$APP_PW" >> .env
+# (giữ BYP_PW ở nơi an toàn — dùng cho seed-shop / đếm toàn bảng)
+
+# 2. Preflight pha 4 — đủ 4/4 PASS mới đổi vai (pooled · session-context · app-role · migration-role):
+docker compose run --rm --no-deps backend node dist/phase4-preflight
+
+# 3. Khởi động lại backend dưới vai ứng dụng; log phải có "Backend chạy dưới vai "trcf_app" (RLS áp)":
+docker compose up -d backend && docker compose logs backend | grep DbRole
+```
+
+- Chưa đặt `DB_APP_USER` ⇒ backend chạy bằng `DB_USER` như cũ (log **cảnh báo** "SUPERUSER — RLS KHÔNG áp"). Migration và cổng sao lưu luôn đi bằng `MIGRATION_DATABASE_URL`.
+- CLI đếm toàn bảng (`baseline-report`, `phase1-gate`, `phase2-gate`, `phase2-preflight`) chạy bằng vai bị RLS lọc sẽ **từ chối** và nêu tên vai — không in số 0 giả.
+- Thủ tục cửa sổ triển khai pha 4 ở quán (báo cáo trước/sau, bài đọc chéo hai quán) thuộc **555.2** — chưa có ở đây.
+
 ---
 
 ## 8. Sao lưu dữ liệu — QUAN TRỌNG

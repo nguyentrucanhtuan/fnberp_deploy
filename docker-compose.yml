@@ -88,8 +88,14 @@ services:
       # Dấu `-` (không phải `:-`) là cố ý: biến chưa khai vẫn truyền vào dạng rỗng.
       TRUST_PROXY: ${TRUST_PROXY-}
       # Trỏ Postgres nội bộ (không sslmode → backend tự tắt SSL).
-      # Muốn dùng DB ngoài (Neon…): thay cả dòng này bằng chuỗi của bạn (+ ?sslmode=require).
-      DATABASE_URL: postgresql://${DB_USER:-trcf}:${DB_PASSWORD:?DB_PASSWORD bắt buộc}@postgres:5432/${DB_NAME:-trcf_erp}
+      # Muốn dùng DB ngoài (Neon…): thay cả hai dòng dưới bằng chuỗi của bạn (+ ?sslmode=require).
+      #
+      # 555.1 — TÁCH VAI: `DATABASE_URL` là vai ỨNG DỤNG (chỉ DML, bị RLS lọc theo quán) khi
+      # `.env` có DB_APP_USER/DB_APP_PASSWORD (tạo bằng `node dist/setup-db-roles`, README
+      # "Tách vai"); chưa đặt ⇒ y như cũ (vai DB_USER). `MIGRATION_DATABASE_URL` LUÔN là vai
+      # CHỦ (DB_USER): cổng sao lưu, migration lúc boot, migration một chiều, CLI kiểm.
+      DATABASE_URL: postgresql://${DB_APP_USER:-${DB_USER:-trcf}}:${DB_APP_PASSWORD:-${DB_PASSWORD:?DB_PASSWORD bắt buộc}}@postgres:5432/${DB_NAME:-trcf_erp}
+      MIGRATION_DATABASE_URL: postgresql://${DB_USER:-trcf}:${DB_PASSWORD:?DB_PASSWORD bắt buộc}@postgres:5432/${DB_NAME:-trcf_erp}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET bắt buộc — openssl rand -hex 32}
       JWT_EXPIRES: ${JWT_EXPIRES:-8h}
       ADMIN_SEED_EMAIL: ${ADMIN_SEED_EMAIL:?ADMIN_SEED_EMAIL bắt buộc}
