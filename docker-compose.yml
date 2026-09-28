@@ -61,7 +61,11 @@ services:
 
   # ── API NestJS: migration + seed quản trị/nhóm quyền chạy tự động lúc boot ──
   backend:
-    image: ghcr.io/nguyentrucanhtuan/trcf-erp-backend:${IMAGE_TAG:-latest}
+    # BACKEND_IMAGE_TAG (tuỳ chọn) ghim RIÊNG backend — quán chuột bạch chạy ảnh của một
+    # nhánh (552.4), ghim bằng tag commit BẤT BIẾN `sha-<commit>` (tag nhánh đổi mỗi lần
+    # build + pull_policy: always ⇒ kéo mã mới giữa chừng) trong khi frontend vẫn theo IMAGE_TAG (frontend
+    # không có ảnh nhánh). Không đặt ⇒ y như cũ: IMAGE_TAG, rồi `latest`.
+    image: ghcr.io/nguyentrucanhtuan/trcf-erp-backend:${BACKEND_IMAGE_TAG:-${IMAGE_TAG:-latest}}
     pull_policy: always
     restart: unless-stopped
     depends_on:

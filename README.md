@@ -561,6 +561,130 @@ docker compose run --rm --no-deps backend node dist/oneway-migrate --down <TênM
 
 Lệnh cũng chụp dump trước khi đảo. `pnpm migration:revert` / `typeorm migration:revert` **không** đảo được migration một chiều (báo "not found in source code").
 
+#### Triển khai pha 1 ở một quán (552.4) — `TimestamptzEverywhere1783741000000`
+
+Thứ tự bắt buộc: **Coffeetree trước**, chạy **trọn 7 ngày không sự cố** rồi mới tới ba quán khách, **từng quán một**. Mỗi quán đi đủ chuỗi dưới; ghi từng ô vào sổ `specs/055-saas/trien-khai-pha-1.md` (repo umbrella `fnberp_fullstack`). Quán nào dừng ở bước nào thì **không đi tiếp** bước sau ở quán đó.
+
+**0. Điều kiện trước khi lên lịch** — cả bốn phải đạt:
+
+- Quán khách: Coffeetree đã đủ 7 ngày không sự cố (mục 5). Coffeetree: tệp mốc gốc đã chép lên máy và `sha256sum` khớp (bước 1).
+- Cửa sổ **ngoài giờ bán**, trần **30 phút** từ `stop backend` tới `up -d backend`. Bản sao Coffeetree đo: runner 0,5 s (0,8 s kể cả sao lưu), báo cáo + cửa vài giây mỗi lệnh.
+- **Diễn tập trọn chuỗi trên bản sao dump của CHÍNH quán đó** (không dùng bản sao Coffeetree thay cho quán khách) — trên máy local, trong `trcf_erp_backend/`. Dump lấy theo [§8](#khôi-phục-một-bản-dump-xuống-postgres-17-máy-local). Quán khách chưa có mốc gốc thì chụp một lần từ bản sao đã khôi phục (Postgres 17 tạm cổng 55432 như §8), rồi chạy diễn tập với chính tệp đó:
+
+  ```bash
+  BASELINE_DATABASE_URL=postgresql://trcf:restore@localhost:55432/trcf_restore \
+    node_modules/.bin/ts-node scripts/baseline-report.ts --until <ngày chụp dump> --out ../_bmad-output/implementation-artifacts/baseline-<quán>-<ngày>.json
+  DRILL_SOURCE_DUMP=<quán>.dump BASELINE_FILE=../_bmad-output/implementation-artifacts/baseline-<quán>-<ngày>.json \
+    BASELINE_UNTIL=<ngày chụp dump> bash scripts/timestamptz-rehearsal.sh
+  ```
+
+  **Qua** = dòng cuối `Tất cả PASS`; ghi thời gian runner (`thời gian runner up: …`). Đỏ ⇒ không lên lịch quán đó. (Coffeetree: `bash scripts/timestamptz-rehearsal.sh` — nguồn mặc định là bản sao 27/09, mốc gốc `baseline-055-2026-09-27.json`.) Diễn tập giả định quán ở `Asia/Ho_Chi_Minh`.
+- **Lưới hồi quy xanh trên cùng bản sao đó** (mã mới, schema cũ). Lưới ghi dòng `RG551` vào sổ quỹ/kho nên **không bao giờ chạy lên DB quán** — chỉ lên bản sao khôi phục vào một database tên kết thúc `_test`:
+
+  ```bash
+  E2E_REUSE_DATABASE=1 TEST_DATABASE_URL=postgresql://…/<quán>_copy_test \
+    npx jest --config ./test/jest-e2e.json test/regression-grid.e2e-spec.ts
+  ```
+
+  **Qua** = mọi ca xanh. Dữ liệu gốc lệch (Σ moves ≠ quants, bút toán mồ côi) làm lưới đỏ từ luồng ① — xử lý dữ liệu quán trước, không mở cửa sổ.
+
+**1. Ghim ảnh (chỉ Coffeetree, lúc mã pha 1 chưa vào `main`) — đây là một lần DEPLOY THẬT.** Ảnh nhánh được build bằng cách bấm tay workflow trên nhánh — mang tag theo nhánh (vd `feat-055-saas`) và tag commit `sha-<7 ký tự>`, **không** đè `latest`. **Ghim bằng tag `sha-…`** (bất biến): tag nhánh đổi mỗi lần bấm lại workflow, mà compose có `pull_policy: always` ⇒ ghim tag nhánh là Coffeetree kéo mã mới giữa 7 ngày. Trên máy Coffeetree:
+
+```bash
+cd ~/fnberp
+printf '\nBACKEND_IMAGE_TAG=sha-<commit>\n' >> .env   # chỉ backend; frontend vẫn theo IMAGE_TAG
+docker compose config --images                  # kiểm: backend …:sha-<commit>, frontend như cũ
+docker compose pull backend && docker compose up -d backend
+docker compose logs backend | grep -E "Đã sao lưu và kiểm đọc lại được|Migration MỘT CHIỀU đang chờ|Backend đang chạy"
+docker inspect --format '{{index .RepoDigests 0}}' ghcr.io/nguyentrucanhtuan/trcf-erp-backend:sha-<commit>   # digest → sổ
+```
+
+(`printf` có `\n` đầu để không dán vào dòng cuối khi `.env` không kết thúc bằng xuống dòng.) Ảnh nhánh mang **migration thường mới** của nhánh ⇒ lần `up -d` này chạy chúng, vài ngày trước cửa sổ:
+
+- Cổng sao lưu 551.1 tự chụp dump **trước** các migration đó — chép đường tệp ở dòng `Đã sao lưu và kiểm đọc lại được: /backups/trcf_erp-<ts>.dump` vào sổ (kèm tag `sha-…` + digest).
+- **Qua** = log có `Backend đang chạy` + cảnh báo `Migration MỘT CHIỀU đang chờ … TimestamptzEverywhere1783741000000`, rồi **bán một đơn thử** trên màn bán hàng (thu tiền, in bill) và thấy nó ở màn Đơn hàng.
+- **Không qua ⇒ lùi**: [quay về đúng dump đó](#đứt-giữa-chừng--mất-điện-đứt-ssh-tiến-trình-bị-giết) **và** gỡ dòng `BACKEND_IMAGE_TAG` khỏi `.env` rồi `docker compose up -d backend`. Chỉ gỡ dòng mà không quay về dump là không đủ — ảnh cũ không chạy được trên schema đã nhận migration thường mới.
+
+Ba quán khách không có dòng đó nên vẫn ở `latest`. `install … --update` chỉ sửa `IMAGE_TAG`, không đụng `BACKEND_IMAGE_TAG` — **gỡ dòng này** khi nhánh đã vào `main` (nếu không, quán sẽ đứng yên ở ảnh đã ghim).
+
+**Chép tệp mốc gốc lên máy Coffeetree** (trước ngày chạy — bước 3c cần): tệp `_bmad-output/implementation-artifacts/baseline-055-2026-09-27.json` của repo umbrella, đặt ở `~/baseline-055-2026-09-27.json`, rồi kiểm:
+
+```bash
+sha256sum ~/baseline-055-2026-09-27.json
+# phải ra đúng: 56a0418ecc9641b9347bace4e78d5798083267dee94c827c44406f5e6c09fe8a
+```
+
+Lệch ⇒ chép lại. Ghi giá trị vào sổ.
+
+**2. Vài ngày trước cửa sổ** — đặt/đọc lại múi giờ (bước 1 của ví dụ trên) rồi kiểm trước-khi-bay chỉ-đọc (bước 2 ở trên):
+
+```bash
+docker compose run --rm --no-deps backend node dist/timestamptz-preflight
+```
+
+**Qua** = thoát 0, `✅ Sạch` (có thể kèm `TIMESTAMPTZ_PREFLIGHT_ACCEPT` đã soi tay — ghi danh sách vào sổ; **cùng danh sách đó** phải truyền cho runner ở 3b, gate ở 3c và kiểm hằng ngày ở mục 5). Không qua ⇒ không lên lịch.
+
+**3. Trong cửa sổ** — trong `tmux`, **đúng thứ tự**, ghi giờ bắt đầu:
+
+```bash
+tmux new -s phase1
+cd ~/fnberp
+docker compose stop backend
+# a. Báo cáo TRƯỚC — ghi vào volume backups (không đè tệp có sẵn). --until: hôm qua.
+#    Coffeetree: --until 2026-09-27 (để so được với mốc gốc ở bước c).
+docker compose run --rm --no-deps backend node dist/baseline-report \
+  --until <YYYY-MM-DD> --out /backups/phase1-before-<ngày>.json
+# b. Migration tay (cùng -e TIMESTAMPTZ_PREFLIGHT_ACCEPT=… nếu bước 2 cần) — chụp dump + đổi cột
+docker compose run --rm --no-deps backend node dist/oneway-migrate TimestamptzEverywhere1783741000000
+# c. CỬA — chỉ đọc. Bước 2 cần ACCEPT ⇒ thêm đúng `-e TIMESTAMPTZ_PREFLIGHT_ACCEPT="…"` như (b)
+#    ngay sau `run --rm --no-deps`, nếu không `reference-checks` FAIL oan. Quán khách:
+docker compose run --rm --no-deps backend node dist/phase1-gate --before /backups/phase1-before-<ngày>.json
+#    Coffeetree: thêm mốc gốc 27/09 — kiểm tệp có thật TRƯỚC (thiếu tệp thì `-v` tạo thư
+#    mục rỗng và gate thoát 2 giữa cửa sổ):
+[ -f ~/baseline-055-2026-09-27.json ] && sha256sum ~/baseline-055-2026-09-27.json   # = 56a0418e…fe8a (bước 1)
+docker compose run --rm --no-deps -v ~/baseline-055-2026-09-27.json:/ref/baseline-055.json:ro \
+  backend node dist/phase1-gate --before /backups/phase1-before-<ngày>.json --reference /ref/baseline-055.json
+# d. CHỈ KHI c thoát 0:
+docker compose up -d backend
+```
+
+- (a) **Qua** = in 6 hash + `→ /backups/phase1-before-<ngày>.json`. `tz` mặc định là `general.timezone` của quán; thiếu/sai múi giờ ⇒ thoát 1 với câu nêu cách đặt. Tệp đã có ⇒ thoát 1, không ghi — đặt tên khác.
+- (b) **Qua** = `✅ Đã chạy … trong X s`. Chép dòng `Đã sao lưu và kiểm đọc lại được: /backups/trcf_erp-<ts>.dump` vào sổ — đó là dump để quay về. Thoát 1 ⇒ schema nguyên, `docker compose up -d backend` rồi điều tra (quán vẫn bán trên schema cũ).
+- (c) In mỗi phép một dòng `PASS|FAIL <tên> — <chi tiết>`: `naive-columns` (0 cột trần) · `oneway-applied` · `attendance-instant` · `timezone` · `reference-checks` (mốc đối chiếu chạy lại **sau** migration) · `same-day-0030` (bút toán thu ↔ đơn, giờ mở ca ↔ giờ ghi ca cùng ngày giờ quán) · `baseline-before-after` (doanh thu · tồn · quỹ · điểm = báo cáo trước; số dòng chỉ khác ở bảng `migrations`, và bảng đó **phải tăng** — `--before` chụp sau runner thì FAIL; cùng database) · `baseline-reference` (chỉ khi có `--reference`: doanh thu theo ngày = mốc gốc). Phép 7/8 chứng minh **số nghiệp vụ không đổi và không có ghi chen giữa hai lần chụp** — KHÔNG chứng minh migration quy đổi đúng nhánh (bốn hash không đọc cột nào migration đổi). Đúng nhánh do checksum từng cột trong chính transaction migration (b) + phép `reference-checks`/`same-day-0030` bảo đảm. **Qua** = thoát 0, dòng cuối `✅ Cửa pha 1: 7/7 PASS` (Coffeetree `8/8`). Thoát 2 = gõ sai tham số hoặc tệp báo cáo hỏng — sửa lệnh, chạy lại (chưa phải kết luận).
+- (c) thoát 1 ⇒ **KHÔNG** `up -d backend`. Lùi ngay, lúc cửa `--down` còn mở (trước bước d):
+
+  ```bash
+  docker compose run --rm --no-deps backend node dist/oneway-migrate --down TimestamptzEverywhere1783741000000
+  docker compose up -d backend
+  ```
+
+  `--down` hỏng ⇒ [quay về dump](#đứt-giữa-chừng--mất-điện-đứt-ssh-tiến-trình-bị-giết) đúng tệp đã chép ở (b). Ghi sự cố (mục 5).
+
+- Riêng Coffeetree: `baseline-reference` FAIL với chi tiết `đã lệch từ --before` mà `baseline-before-after` PASS ⇒ migration không đổi số; doanh thu 29/08–27/09 đã đổi **trước** cửa sổ (đơn tháng 9 bị hoàn/sửa sau ngày chụp mốc gốc). Vẫn là FAIL — **không tự `up`**: báo người phụ trách, người đó quyết (ghi sổ) trong trần 30 phút; không quyết kịp ⇒ `--down` như trên.
+
+Cửa (c) chạy lại được bao nhiêu lần cũng được (không ghi gì). Chạy khi backend **đang bán** thì `baseline-before-after` đỏ vì có đơn mới — chỉ tin kết quả trong cửa sổ.
+
+**4. Ghi sổ** — mỗi ô của quán trong `specs/055-saas/trien-khai-pha-1.md`: kết quả preflight, diễn tập bản sao (thời gian runner), lưới bản sao, giờ cửa sổ, tệp dump, thời gian runner, gate (7/7 hoặc 8/8), hash trước/sau, ngày bắt đầu đếm 7 ngày. Dán nguyên dòng in ra — không điền số ước.
+
+**5. Luật 7 ngày và sự cố.** Ngày 1 là ngày sau cửa sổ đã `up -d backend` với gate PASS. Mỗi ngày trong 7 ngày, chạy kiểm chỉ-đọc (dữ liệu mới vẫn phải khớp mốc đối chiếu):
+
+```bash
+docker compose run --rm --no-deps backend node dist/timestamptz-preflight
+# bước 2 có ACCEPT ⇒ cùng danh sách:
+# docker compose run --rm --no-deps -e TIMESTAMPTZ_PREFLIGHT_ACCEPT="…" backend node dist/timestamptz-preflight
+```
+
+(`code-date:*` có giờ tạo 01:00–07:00 giờ quán là mã mang ngày UTC — đã biết, xem bước 2 ở trên.) **Sự cố** là một trong các việc sau:
+
+- gate thoát 1 ở cửa sổ, hoặc phải `--down` / quay về dump;
+- kiểm hằng ngày báo `timestamp without time zone` ≠ 0 hoặc dòng lệch mốc đối chiếu mới (ngoài `code-date` khung 01:00–07:00);
+- một đơn / bút toán / ca nằm hai ngày khác nhau giữa các màn (Đơn hàng, Tổng quan, Sổ quỹ, Ca), hoặc tổng ngày của hai màn khác nhau;
+- bảng công dịch giờ (giờ vào/ra lệch so với máy chấm công);
+- backend không khởi động, hoặc lỗi 5xx ở màn có lọc ngày;
+- chủ quán báo số tiền ngày/ca không khớp két mà nguyên nhân là ngày/giờ.
+
+Có sự cố ⇒ (1) **không** sang quán khách; (2) lùi quán đó (`--down` nếu cửa còn mở, không thì quay về dump — mất đơn sau giờ dump, cân nhắc với chủ quán); (3) ghi vào bảng nhật ký sự cố của sổ + một dòng `NHAT-KY.md`; (4) sửa, diễn tập lại trên bản sao, mở cửa sổ mới và **đếm lại 7 ngày từ đầu**.
+
 ---
 
 ## 8. Sao lưu dữ liệu — QUAN TRỌNG
