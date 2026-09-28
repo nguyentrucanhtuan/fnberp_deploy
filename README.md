@@ -687,6 +687,12 @@ Có sự cố ⇒ (1) **không** sang quán khách; (2) lùi quán đó (`--down
 
 #### Triển khai pha 2 ở một quán (553.6) — năm migration một chiều 553.2–553.5
 
+> ⛔ **CHƯA DÙNG ĐƯỢC NGUYÊN VĂN — chờ vá trước cửa sổ pha 2 đầu tiên** (review 28/09, retro 553 mục 12). Ba lỗi high:
+> ① `BACKUP_KEEP` mặc định 5 ⇒ lượt thứ sáu (chạy lại / chia cửa sổ) xoá mất dump BIG — đường lùi duy nhất;
+> ② kiểm log `grep '2350[235]'` không bao giờ bắt được gì (app không in SQLSTATE ra log);
+> ③ lùi bằng "xoá dòng tag" có thể kéo ảnh pha 2 (`latest` + `pull_policy: always`).
+> Cùng ba lỗi vừa: fingerprint preflight còn tuỳ chọn · khối khôi phục chung với pha 1 `up` backend trước khi trả tag · thiếu kiểm đĩa cho 5 dump. **Không lên lịch cửa sổ tới khi khối cảnh báo này được gỡ.**
+
 Pha 2 gắn `shop_id` vào mọi bảng nghiệp vụ. Nó gồm **năm** migration một chiều, chạy tay **đúng thứ tự** trong **một** cửa sổ:
 
 1. `BigintLargeTables1783741100000` (BIG) — lô kèm `CreateShops1783740950000` nếu ảnh pha 1 của quán chưa có nó.
