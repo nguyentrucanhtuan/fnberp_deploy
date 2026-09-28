@@ -685,6 +685,195 @@ docker compose run --rm --no-deps backend node dist/timestamptz-preflight
 
 Có sự cố ⇒ (1) **không** sang quán khách; (2) lùi quán đó (`--down` nếu cửa còn mở, không thì quay về dump — mất đơn sau giờ dump, cân nhắc với chủ quán); (3) ghi vào bảng nhật ký sự cố của sổ + một dòng `NHAT-KY.md`; (4) sửa, diễn tập lại trên bản sao, mở cửa sổ mới và **đếm lại 7 ngày từ đầu**.
 
+#### Triển khai pha 2 ở một quán (553.6) — năm migration một chiều 553.2–553.5
+
+Pha 2 gắn `shop_id` vào mọi bảng nghiệp vụ. Nó gồm **năm** migration một chiều, chạy tay **đúng thứ tự** trong **một** cửa sổ:
+
+1. `BigintLargeTables1783741100000` (BIG) — lô kèm `CreateShops1783740950000` nếu ảnh pha 1 của quán chưa có nó.
+2. `AddShopIdColumns1783741200000` (SHOP).
+3. `CompositeKeys1783741400000` (CK) — lô kèm rào thường `ShopIdFence1783741300000`.
+4. `ExternalRefsAndZaloAppShops1783741500000` (ER).
+5. `TenantScopedUniques1783741600000` (TU) — lô kèm rào thường `ExternalRefFence1783741550000`.
+
+Thứ tự quán như pha 1: **Coffeetree trước**, chạy **trọn 7 ngày không sự cố**, rồi tới ba quán khách, **từng quán một**. Ghi từng ô vào sổ `specs/055-saas/trien-khai-pha-2.md` (repo umbrella `fnberp_fullstack`). Quán nào dừng ở bước nào thì **không đi tiếp** ở quán đó.
+
+> ⚠️ **Ảnh pha 2 CHỈ đổi TRONG cửa sổ.** Khác pha 1: ảnh pha 2 **không khởi động được** trên schema trước pha 2. E-18 từ chối vì rào `ShopIdFence` đứng sau migration một chiều chưa chạy; diễn tập đo được câu `Cần chạy tay BigintLargeTables1783741100000 trước`. "Ghim ảnh rồi `up -d` vài ngày trước" như pha 1 là **dừng bán ngay**. Trước cửa sổ chỉ làm hai việc: `docker pull` ảnh theo tag, và chạy preflight bằng `BACKEND_IMAGE_TAG=… docker compose run --rm …`. **Không sửa `.env`, không `up`.**
+
+> ⚠️ **Đường lùi ở máy quán là DUMP của lượt runner đầu tiên.** Sau khi đã qua `TenantScopedUniques`, `--down` chỉ đảo được **đúng nó**: rào `ExternalRefFence` là dòng `migrations` mới hơn ER, và ảnh **không** chạy được `migration:revert` để gỡ rào (thiếu `dotenv`, xem mục "Đảo bằng `down()`" ở trên). Lùi sâu hơn thì phải làm đủ hai việc: **quay về dump của lượt runner đầu tiên** (BIG — chụp ngay trước khi pha 2 đổi gì), **và** trả `BACKEND_IMAGE_TAG` về tag pha 1. Diễn tập đã đo đúng điều này: `--down ExternalRefsAndZaloAppShops…` bị từ chối (`không phải dòng mới nhất`) khi rào còn.
+
+**Chia cửa sổ.** Nhỏ nhất là {BIG, SHOP, CK, ER} | {TU}. Ảnh pha 2 boot được khi **chỉ còn TU** chờ: boot tự chạy rào `ExternalRefFence` (có cổng sao lưu chụp trước) và log `Migration MỘT CHIỀU đang chờ … TenantScopedUniques1783741600000`. Nó **không** boot được khi ER còn chờ (E-18 nêu `ExternalRefsAndZaloAppShops1783741500000`). Cả hai điều này đã thử trên bản chép giữa chừng trong diễn tập, kèm cửa sổ 2 (`oneway-migrate TenantScopedUniques…` rồi `phase2-gate --schema-only` ⇒ 0). Chỉ chia khi **tổng đo được** ở diễn tập của quán vượt 30′ — **không nới trần**. Diễn tập dev trên bản sao Coffeetree 27/09 đo **1,7–2,0 s** cho cả năm lượt (kể cả sao lưu), ước cửa sổ **4,5 s**, nên một cửa sổ là đủ. Nếu chia:
+
+- cuối cửa sổ 1 (sau ER, trước `up -d backend`) chạy `node dist/phase2-gate --before /backups/phase2-before-<ngày>.json` (Coffeetree thêm `--reference`). Cửa sổ 1 **qua** khi lệnh thoát 1 và FAIL **đúng hai** phép `oneway-applied` + `tenant-uniques` (TU chưa chạy), mọi phép khác PASS — kể cả `baseline-before-after`. Chỉ khi đó mới `up -d backend`; FAIL phép nào khác ⇒ đường lùi như cửa (d) thoát 1;
+- cửa sổ 2 chụp `--before` mới ngay trước lượt TU, rồi chạy cửa đầy đủ.
+
+**0. Điều kiện trước khi lên lịch** — cả năm phải đạt:
+
+- **Cửa 552 đã xanh ở CẢ BỐN quán** (sổ `trien-khai-pha-1.md`: 7 ngày của Coffeetree + gate của ba quán khách). Pha 2 không bắt đầu ở quán nào khi còn một quán chưa qua pha 1.
+- **CI "Lưới hồi quy" xanh trên đúng commit của ảnh.** Trên GitHub → `trcf_erp_backend` → Actions → `Regression grid`, lượt chạy của đúng commit `<p2>` mà tag `sha-<p2>` trỏ tới phải xanh. Ghi URL lượt chạy vào sổ.
+- **Diễn tập pha 2 trên bản sao dump MỚI của CHÍNH quán đó — kể cả Coffeetree** (trên máy local, trong `trcf_erp_backend/`). Dump phải lấy **sau** khi quán đã qua pha 1 (diễn tập tự bỏ bước pha 1 khi nguồn đã áp), để catalog, fingerprint và các migration thường còn chờ trong diễn tập đúng bằng quán thật. Quán khách chụp mốc gốc một lần từ bản sao đã khôi phục, như bước 0 của pha 1:
+
+  ```bash
+  DRILL_SOURCE_DUMP=<quán>.dump BASELINE_FILE=../_bmad-output/implementation-artifacts/baseline-<quán>-<ngày>.json \
+    BASELINE_UNTIL=<ngày chụp dump> bash scripts/phase2-rehearsal.sh
+  ```
+
+  Coffeetree: `DRILL_SOURCE_DUMP=<coffeetree-sau-pha-1>.dump bash scripts/phase2-rehearsal.sh` — `BASELINE_FILE` để mặc định (`baseline-055-2026-09-27.json`, `--until 2026-09-27` vẫn đúng cho Coffeetree). Chạy **không** `DRILL_SOURCE_DUMP` thì nguồn là `ct_pristine` (bản sao 27/09, TRƯỚC pha 1, diễn tập tự áp pha 1) — đó chỉ là diễn tập của máy dev; fingerprint của nó **không** dùng ở quán.
+
+  **Qua** khi dòng cuối là `Tất cả PASS`. Chép vào sổ năm dòng `thời gian up …` (migrate + tổng kể cả sao lưu), dòng tổng, và dòng `Fingerprint trước pha 2: <hash>`. Bước 2 dùng hash đó.
+- **Tổng thời gian dưới 30′.** Diễn tập in sẵn dòng `ước cửa sổ (up + báo cáo + cửa + boot)`: năm lượt up (kể cả sao lưu) + báo cáo trước + cửa + boot, tất cả đo trên chính bản sao, và tự kiểm < 1800 s. Vượt 30′ ⇒ chia cửa sổ như trên.
+- **Lưới bản sao xanh.** Đây là bước 12 của diễn tập: `regression-grid` chạy trên bản sao đã áp năm migration, dòng `PASS lưới hồi quy: jest thoát 0`. Lưới **không bao giờ** chạy lên DB quán.
+
+**1. Build + kéo ảnh (KHÔNG `up`).** Bấm tay workflow `Build & Push Backend Image` trên nhánh. Nó đẩy tag `sha-<7 ký tự>`, không đè `latest`. Trên máy quán:
+
+```bash
+cd ~/fnberp
+docker pull ghcr.io/nguyentrucanhtuan/trcf-erp-backend:sha-<p2>
+docker inspect --format '{{index .RepoDigests 0}}' ghcr.io/nguyentrucanhtuan/trcf-erp-backend:sha-<p2>   # digest → sổ
+grep '^BACKEND_IMAGE_TAG=' .env    # tag pha 1 đang chạy → sổ (đường lùi); không có dòng ⇒ ghi "không có"
+```
+
+**Qua** khi `pull` xong và digest đã ghi. **Không** sửa `.env`, **không** `up`: quán vẫn bán trên ảnh pha 1.
+
+**2. Vài ngày trước cửa sổ — kiểm trước-khi-bay, chỉ đọc.** Lệnh chạy được cả lúc quán đang bán. Ảnh pha 2 chạy trong một container dùng-một-lần; container backend đang bán không đổi:
+
+```bash
+BACKEND_IMAGE_TAG=sha-<p2> docker compose run --rm --no-deps backend \
+  node dist/phase2-preflight --expect-fingerprint <hash của diễn tập>
+```
+
+Mỗi phép in một dòng `PASS|FAIL <tên> — <chi tiết>`:
+
+- `server-version` — Postgres ≥ 15.
+- `phase1-applied` — có dòng `TimestamptzEverywhere…` và 0 cột trần.
+- `phase2-not-started` — chưa có dòng nào của pha 2.
+- `shops` — bảng chưa có, hoặc có đúng quán `id = 1`.
+- `unique-inventory` — mọi ràng buộc duy nhất đều thuộc kế hoạch 553.5 hoặc là khoá toàn cục. Unique lạ là thứ sẽ làm `TenantScopedUniques` ném **giữa** cửa sổ.
+- `catalog-fingerprint` — hash của bảng, cột, ràng buộc, chỉ mục bằng hash của diễn tập. Nghĩa là cửa sổ sẽ gặp đúng catalog đã diễn tập, nên các tiền kiểm **cấu trúc/catalog** của năm migration không thể lần đầu ném ở quán. Fingerprint **không** nhìn dữ liệu — tiền kiểm dữ liệu kiểm riêng dưới đây.
+
+**Qua** khi thoát 0 và dòng cuối là `✅ Kiểm trước pha 2: 6/6 PASS`.
+
+- **Không qua ⇒ không lên lịch.**
+- `catalog-fingerprint` lệch ⇒ schema quán đã khác bản đã diễn tập. Lấy dump mới của quán, chạy lại diễn tập trên dump đó, rồi dùng hash mới.
+- `unique-inventory` FAIL nêu `lạ: <bảng>.<tên>` ⇒ phải phân loại ràng buộc đó trong mã (553.5) và build ảnh mới. Không xoá tay ở quán.
+- `phase2-not-started` FAIL ⇒ pha 2 đã chạy dở hoặc xong ở quán này. Dùng `phase2-gate` và mục [Đứt giữa chừng](#đứt-giữa-chừng--mất-điện-đứt-ssh-tiến-trình-bị-giết). Phép `unique-inventory` khi đó in `SKIP`.
+
+Thoát 2 là gõ sai tham số: sửa lệnh rồi chạy lại.
+
+Cùng lúc, chạy một kiểm dữ liệu chỉ-đọc cho `ExternalRefsAndZaloAppShops` (nó ném nếu ô `zalo.app_id` dài quá 64 ký tự):
+
+```bash
+docker compose exec -T postgres psql -U trcf trcf_erp -c \
+  "SELECT id, length(btrim(value)) FROM system_settings WHERE module='zalo' AND key='app_id' AND length(btrim(value)) > 64"
+```
+
+**Qua** khi ra **0 dòng**. Tiền tố `ref_code` suy từ tên/slug quán đã được diễn tập trên dump mới của quán (bước 0) bảo đảm — tên quán đổi sau ngày chụp dump ⇒ lấy dump mới và diễn tập lại.
+
+**Coffeetree — chép mốc gốc** lên `~/baseline-055-2026-09-27.json` rồi kiểm lại, như bước 1 của pha 1 (`sha256sum` phải ra `56a0418ecc9641b9347bace4e78d5798083267dee94c827c44406f5e6c09fe8a`). Tệp đã có từ pha 1 thì chỉ cần kiểm lại.
+
+**3. Trong cửa sổ** — ngoài giờ bán, trần **30 phút** tính từ `stop backend` tới `up -d backend`. Chạy trong `tmux`, **đúng thứ tự**, ghi giờ bắt đầu. **Dừng ở lệnh đầu tiên không qua**, rồi đi đường lùi bên dưới.
+
+```bash
+tmux new -s phase2
+cd ~/fnberp
+docker compose stop backend
+# a. Đổi ảnh backend sang pha 2 — CHỈ lúc này. Quán đã có dòng BACKEND_IMAGE_TAG:
+sed -i 's/^BACKEND_IMAGE_TAG=.*/BACKEND_IMAGE_TAG=sha-<p2>/' .env
+#    quán chưa có dòng đó (đang chạy IMAGE_TAG/latest):
+#    printf '\nBACKEND_IMAGE_TAG=sha-<p2>\n' >> .env
+docker compose config --images        # kiểm: backend …:sha-<p2>, frontend như cũ
+# b. Báo cáo TRƯỚC — --until: hôm qua (Coffeetree: 2026-09-27 để so với mốc gốc ở d)
+docker compose run --rm --no-deps backend node dist/baseline-report \
+  --until <YYYY-MM-DD> --out /backups/phase2-before-<ngày>.json
+# c. Năm lượt runner, TỪNG lệnh một — chỉ sang lệnh sau khi lệnh trước in ✅
+docker compose run --rm --no-deps backend node dist/oneway-migrate BigintLargeTables1783741100000
+docker compose run --rm --no-deps backend node dist/oneway-migrate AddShopIdColumns1783741200000
+docker compose run --rm --no-deps backend node dist/oneway-migrate CompositeKeys1783741400000
+docker compose run --rm --no-deps backend node dist/oneway-migrate ExternalRefsAndZaloAppShops1783741500000
+docker compose run --rm --no-deps backend node dist/oneway-migrate TenantScopedUniques1783741600000
+# d. CỬA — chỉ đọc. Quán khách:
+docker compose run --rm --no-deps backend node dist/phase2-gate --before /backups/phase2-before-<ngày>.json
+#    Coffeetree: thêm mốc gốc (kiểm tệp có thật TRƯỚC — thiếu thì -v tạo thư mục rỗng, gate thoát 2):
+[ -f ~/baseline-055-2026-09-27.json ] && sha256sum ~/baseline-055-2026-09-27.json   # = 56a0418ecc9641b9347bace4e78d5798083267dee94c827c44406f5e6c09fe8a
+docker compose run --rm --no-deps -v ~/baseline-055-2026-09-27.json:/ref/baseline-055.json:ro \
+  backend node dist/phase2-gate --before /backups/phase2-before-<ngày>.json --reference /ref/baseline-055.json
+# e. CHỈ KHI d thoát 0:
+docker compose up -d backend
+docker compose logs backend | grep -E "Backend đang chạy|MỘT CHIỀU đang chờ"
+```
+
+Tiêu chí từng lệnh:
+
+- **(a)** Qua: `config --images` in backend `…:sha-<p2>`, frontend như trước. Sai ⇒ sửa `.env` lại. Chưa đổi gì trong DB.
+- **(b)** Qua: in 6 hash và `→ /backups/phase2-before-<ngày>.json`. Tệp đã có ⇒ thoát 1: đặt tên khác. Thiếu hoặc sai múi giờ ⇒ thoát 1 kèm câu nêu cách đặt.
+- **(c)** Mỗi lượt qua khi in `✅ Đã chạy … trong X s (… ms, một transaction). Tổng kể cả sao lưu: Y s.` Chép X, Y từng lượt vào sổ.
+  - **Lượt BIG** in thêm `Đã sao lưu và kiểm đọc lại được: /backups/trcf_erp-<ts>.dump`. **Chép đường tệp này vào sổ**: đó là đường lùi của cả pha 2.
+  - Lượt CK in thêm `ShopIdFence1783741300000`; lượt TU in thêm `ExternalRefFence1783741550000` (rào nằm trong lô).
+  - Lượt nào in `đã chạy` là đã ghi từ lần trước. Xem [Đứt giữa chừng](#đứt-giữa-chừng--mất-điện-đứt-ssh-tiến-trình-bị-giết).
+- **(d)** In 11 phép (quán khách 10, vì không có `--reference`):
+  - `oneway-applied` · `phase1-intact` · `shops` (đúng một quán id = 1 + `ref_code`).
+  - `shop-id-columns` — mọi bảng theo quán có `shop_id bigint NOT NULL` + khoá ngoại `FK_<bảng>_shop`. **10 bảng cửa ngõ KHÔNG default**, các bảng khác default 1.
+  - `bigint-large-tables` · `composite-fks` (khoá ngoại kép, `SET NULL` nêu cột con, 4 cột int thô không khoá ngoại).
+  - `tenant-uniques` — unique theo quán; các unique toàn cục (tra-khi-chưa-biết-quán) + `print_pairing_codes.code_hash` (index thường) giữ nguyên.
+  - `external-refs` — in mẫu `<REF>-SO000000-001`.
+  - `zalo-app-shops` — mỗi ô `zalo.app_id` có đúng một dòng ánh xạ. Quán chưa bật kênh ⇒ `0 dòng`.
+  - `baseline-before-after` — 4 hash số liệu = báo cáo trước. Số dòng chỉ được khác ở `migrations` (phải tăng); `shops`, `zalo_app_shops` được phép vắng ở trước.
+  - `baseline-reference` — chỉ Coffeetree: doanh thu theo ngày = mốc gốc.
+
+  **Qua** khi thoát 0 và dòng cuối là `✅ Cửa pha 2: 11/11 PASS` (quán khách `10/10`). Thoát 2 là sai tham số hoặc tệp: sửa lệnh (chưa phải kết luận). Cửa chạy lại được bao nhiêu lần cũng được, vì nó không ghi gì.
+- **(e)** Qua cần đủ ba điều:
+  - log có `Backend đang chạy`;
+  - **không** còn dòng `MỘT CHIỀU đang chờ`;
+  - **bán một đơn thử** trên màn bán hàng (thu tiền, in bill), rồi thấy nó ở màn Đơn hàng.
+
+  Không có `INSERT` thử nào trong cửa. Đường ghi thật đi qua hai nửa: lưới trên bản sao (bước 0) và đơn thử này.
+
+**Đường lùi** — ghi sự cố (mục 5) trong mọi trường hợp:
+
+- **Lượt runner thứ k thoát 1** ⇒ lô của lượt đó đã rollback, schema dừng ở sau lượt k−1. Lỗi `lock timeout` ⇒ tìm phiên giữ khoá (mục Đứt giữa chừng, bước a), rồi chạy lại **đúng lệnh đó**. Lỗi khác:
+  - **k = 1** (BIG): chưa gì đổi. Trả `BACKEND_IMAGE_TAG` về tag pha 1 đã ghi ở bước 1 (sửa lại dòng bằng `sed`, hoặc xoá dòng nếu trước đó không có), rồi `docker compose up -d backend`.
+  - **k ≥ 2**: ảnh pha 1 không được chạy trên schema đã có `shop_id`: bảng cửa ngõ là `NOT NULL` không default, mã cũ ghi mà không nêu `shop_id` sẽ chết `23502`. Ảnh pha 2 cũng không boot được khi ER còn chờ. ⇒ [quay về dump](#đứt-giữa-chừng--mất-điện-đứt-ssh-tiến-trình-bị-giết) **đúng tệp của lượt BIG**, trả `BACKEND_IMAGE_TAG` về tag pha 1, rồi `up -d backend`.
+- **Cửa (d) thoát 1** ⇒ **KHÔNG** `up -d backend`. Quay về dump của lượt BIG + trả tag pha 1 + `up -d backend`.
+  - `--down TenantScopedUniques1783741600000` chỉ đảo được mỗi TU. Chỉ dùng khi FAIL duy nhất là `tenant-uniques` và cần soi thêm trước khi quyết. Còn FAIL khác thì vẫn phải về dump.
+  - Riêng Coffeetree: `baseline-reference` FAIL với chi tiết `đã lệch từ --before`, trong khi `baseline-before-after` PASS ⇒ migration không đổi số, mà doanh thu 29/08–27/09 đã đổi **trước** cửa sổ. Vẫn là FAIL: báo người phụ trách, người đó quyết trong trần 30 phút và ghi sổ. Không quyết kịp ⇒ về dump.
+- **Sau `up -d backend`** (đơn thử hỏng, hoặc sự cố trong 7 ngày) ⇒ quay về dump của lượt BIG + trả tag pha 1. **Mọi đơn bán sau giờ chụp dump sẽ mất** — cân nhắc với chủ quán trước khi làm.
+
+**4. Ghi sổ** — mỗi ô của quán trong `specs/055-saas/trien-khai-pha-2.md`:
+
+- preflight và fingerprint;
+- diễn tập (5 thời gian + tổng);
+- lưới bản sao;
+- CI run;
+- tag + digest;
+- cửa sổ;
+- dump của lượt đầu;
+- gate;
+- hash trước/sau;
+- ngày 1.
+
+Dán nguyên dòng in ra — không điền số ước.
+
+**5. Luật 7 ngày và sự cố.** Ngày 1 là ngày sau cửa sổ đã `up -d backend` với cửa PASS. Mỗi ngày trong 7 ngày, chạy hai kiểm chỉ-đọc:
+
+```bash
+docker compose run --rm --no-deps backend node dist/phase2-gate --schema-only
+docker compose logs --since 24h backend | grep -E '2350[235]'
+```
+
+- Lệnh đầu **qua** khi thoát 0 và dòng cuối là `✅ Schema pha 2 (chỉ schema — không phải cửa): 9/9 PASS`. Nó không so báo cáo, nên chạy được lúc đang bán.
+- Lệnh sau phải **không** in dòng nào: `23502` là thiếu `shop_id`, `23503` là khoá ngoại kép chặn, `23505` là trùng unique. `--since 24h` chỉ đọc log của 24 giờ qua — sự cố hôm trước đã ghi sổ không làm đỏ mãi các ngày sau.
+- Lưu ý: chủ quán đổi Mini App Zalo (ô `zalo.app_id`) sau pha 2 thì `zalo-app-shops` FAIL, vì bảng ánh xạ chưa tự theo ô cấu hình tới 554. Đó là sự cố cần xử lý, không bỏ qua.
+
+**Sự cố pha 2** là một trong các việc sau:
+
+- cửa (d) thoát 1, hoặc phải quay về dump / `--down`;
+- `--schema-only` thoát 1 ở bất kỳ ngày nào;
+- log backend có `23502`, `23503` hoặc `23505` ở một đường ghi bình thường (bán, nhập, ca, chấm công, in, đơn Zalo, MoMo);
+- một màn báo lỗi 5xx khi ghi, hoặc backend không khởi động;
+- mã gửi ra ngoài sai: MoMo, hoá đơn điện tử hoặc Zalo Checkout báo không tìm thấy giao dịch, hoặc tiền về không khớp đơn;
+- số liệu ngày/ca/kho/điểm lệch giữa các màn, hoặc chủ quán báo két không khớp mà nguyên nhân là dữ liệu sau pha 2.
+
+Có sự cố ⇒ (1) **không** sang quán khách; (2) lùi quán đó bằng dump của lượt BIG + tag pha 1 (mất đơn sau giờ dump — cân nhắc với chủ quán); (3) ghi vào bảng nhật ký sự cố của sổ + một dòng `NHAT-KY.md`; (4) sửa, diễn tập lại trên bản sao, mở cửa sổ mới và **đếm lại 7 ngày từ đầu**.
+
 ---
 
 ## 8. Sao lưu dữ liệu — QUAN TRỌNG
