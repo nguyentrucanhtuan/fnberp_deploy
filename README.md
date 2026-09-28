@@ -815,7 +815,7 @@ Tiêu chí từng lệnh:
   - `bigint-large-tables` · `composite-fks` (khoá ngoại kép, `SET NULL` nêu cột con, 4 cột int thô không khoá ngoại).
   - `tenant-uniques` — unique theo quán; các unique toàn cục (tra-khi-chưa-biết-quán) + `print_pairing_codes.code_hash` (index thường) giữ nguyên.
   - `external-refs` — in mẫu `<REF>-SO000000-001`.
-  - `zalo-app-shops` — mỗi ô `zalo.app_id` có đúng một dòng ánh xạ. Quán chưa bật kênh ⇒ `0 dòng`.
+  - `zalo-app-shops` — `shop_id` NOT NULL không default; ở cửa đầy đủ thêm: mỗi ô `zalo.app_id` có đúng một dòng ánh xạ (quán chưa bật kênh ⇒ `0 dòng`). `--schema-only` KHÔNG đối chiếu ô ↔ dòng.
   - `baseline-before-after` — 4 hash số liệu = báo cáo trước. Số dòng chỉ được khác ở `migrations` (phải tăng); `shops`, `zalo_app_shops` được phép vắng ở trước.
   - `baseline-reference` — chỉ Coffeetree: doanh thu theo ngày = mốc gốc.
 
@@ -861,7 +861,7 @@ docker compose logs --since 24h backend | grep -E '2350[235]'
 
 - Lệnh đầu **qua** khi thoát 0 và dòng cuối là `✅ Schema pha 2 (chỉ schema — không phải cửa): 9/9 PASS`. Nó không so báo cáo, nên chạy được lúc đang bán.
 - Lệnh sau phải **không** in dòng nào: `23502` là thiếu `shop_id`, `23503` là khoá ngoại kép chặn, `23505` là trùng unique. `--since 24h` chỉ đọc log của 24 giờ qua — sự cố hôm trước đã ghi sổ không làm đỏ mãi các ngày sau.
-- Lưu ý: chủ quán đổi Mini App Zalo (ô `zalo.app_id`) sau pha 2 thì `zalo-app-shops` FAIL, vì bảng ánh xạ chưa tự theo ô cấu hình tới 554. Đó là sự cố cần xử lý, không bỏ qua.
+- Chủ quán đổi Mini App Zalo (ô `zalo.app_id`) sau pha 2: bảng ánh xạ chưa tự theo ô cấu hình tới 554 (DW-100), nên `--schema-only` cố ý **không** đối chiếu hai thứ này — kiểm hằng ngày vẫn `9/9`, KHÔNG phải sự cố, không đếm lại. Chưa đường chạy nào của app đọc bảng ánh xạ (554 mới dùng và đồng bộ), nên lệch lúc này không ảnh hưởng bán hàng.
 
 **Sự cố pha 2** là một trong các việc sau:
 
