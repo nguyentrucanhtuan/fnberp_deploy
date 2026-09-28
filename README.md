@@ -911,7 +911,192 @@ docker compose up -d backend && docker compose logs backend | grep DbRole
 
 - Chưa đặt `DB_APP_USER` ⇒ backend chạy bằng `DB_USER` như cũ (log **cảnh báo** "SUPERUSER — RLS KHÔNG áp"). Migration và cổng sao lưu luôn đi bằng `MIGRATION_DATABASE_URL`.
 - CLI đếm toàn bảng (`baseline-report`, `phase1-gate`, `phase2-gate`, `phase2-preflight`) chạy bằng vai bị RLS lọc sẽ **từ chối** và nêu tên vai — không in số 0 giả.
-- Thủ tục cửa sổ triển khai pha 4 ở quán (báo cáo trước/sau, bài đọc chéo hai quán) thuộc **555.2** — chưa có ở đây.
+- **Ở quán, KHÔNG làm riêng ba bước trên** (đổi vai lúc đang bán, boot tự chạy migration pha 4 trước khi có cửa). Đổi vai + migration pha 4 đi chung **một** cửa sổ, có báo cáo trước/sau và cửa đọc chéo: [Triển khai pha 4 ở một quán (555.2)](#triển-khai-pha-4-ở-một-quán-5552--rls-theo-quán--backend-dưới-vai-app-một-cửa-sổ). Khối trên chỉ mô tả cơ chế.
+
+#### Triển khai pha 4 ở một quán (555.2) — RLS theo quán + backend dưới vai app, một cửa sổ
+
+Pha 4 gồm **hai việc lên cùng một cửa sổ, không dừng giữa**:
+
+- 555.1: migration thường `EnableShopRls1783741700000` bật RLS + FORCE trên 79 bảng nghiệp vụ;
+- đổi `DATABASE_URL` của backend sang vai `trcf_app`.
+
+Bằng chứng máy móc là **cửa pha 4** — một lệnh trong ảnh. Nó dùng hai kết nối:
+
+- **thước** (`MIGRATION_DATABASE_URL` — vai chủ `trcf`) để đếm sự thật;
+- **đối tượng đo** (`DATABASE_URL` — vai `trcf_app`) để **cố tình** đọc dữ liệu của quán khác, kể cả một "quán ma" không tồn tại.
+
+Cửa **qua** khi đọc chéo ra 0 dòng ở mọi bảng, và không bảng nghiệp vụ nào còn `relrowsecurity = false`.
+
+Thứ tự quán như pha 1/2: **Coffeetree trước**, chạy **trọn 7 ngày không sự cố**, rồi tới ba quán khách, **từng quán một**. Ghi từng ô vào sổ `specs/055-saas/trien-khai-pha-4.md` (repo umbrella). Quán nào dừng ở bước nào thì **không đi tiếp** ở quán đó.
+
+> ⛔ **`--write-probe` KHÔNG BAO GIỜ dùng ở quán.** Cờ này cho cửa thử `UPDATE`/`DELETE` chéo trong một transaction `ROLLBACK`. Chỉ diễn tập trên bản sao, CI và e2e được dùng nó. Database quán không bị ghi thử, dù có `ROLLBACK`. Ở quán, phép `cross-write` **vắng** khỏi danh sách: cửa không in `PASS` giả cho phép không chạy. Tính chất "`UPDATE`/`DELETE` chéo khớp 0 dòng" đã đo trên bản sao hai quán. Ở quán, phép `rls-catalog` kiểm policy `FOR ALL` phủ nó.
+
+> ⚠️ **Cửa chạy TRƯỚC `up`, trên DB đứng yên.** Migration pha 4 là migration thường, tự chạy lúc boot. Để cửa chạy trước khi backend phục vụ request nào dưới RLS, cửa sổ tách hai bước đầu của boot ra thành `node dist/boot-migrate`: cổng sao lưu, rồi migration bằng vai chủ. Lệnh này **không** mở HTTP. Cửa FAIL thì chưa request nào đi qua, và dump của `boot-migrate` là đường lùi trọn vẹn.
+
+**0. Điều kiện trước khi lên lịch** — cả năm phải đạt:
+
+- **Cửa 554 đã xanh ở quán này**, và quán đang chạy ảnh ≥ 554.
+- **CI "Lưới hồi quy" xanh trên đúng commit của ảnh**, có dòng `PASS cửa pha 4: … đọc/ghi chéo 0`. Ghi URL lượt chạy vào sổ.
+- **Diễn tập pha 4 trên bản sao dump MỚI của CHÍNH quán đó**, trên máy local, trong `trcf_erp_backend/`:
+
+  ```bash
+  DRILL_SOURCE_DUMP=<quán>.dump BASELINE_FILE=../_bmad-output/implementation-artifacts/baseline-<quán>-<ngày>.json \
+    BASELINE_UNTIL=<ngày chụp dump> bash scripts/phase4-rehearsal.sh
+  ```
+
+  Coffeetree để `BASELINE_FILE` mặc định (`baseline-055-2026-09-27.json`). Chạy không `DRILL_SOURCE_DUMP` thì nguồn là `ct_pristine` — đó chỉ là diễn tập của máy dev.
+
+  Diễn tập đi trọn cửa sổ bằng chính các CLI trong ảnh:
+  - `setup-db-roles` ×2, `phase4-preflight`;
+  - cửa trước migration ⇒ 1;
+  - `boot-migrate`;
+  - cửa `--before --reference`;
+  - boot dưới `trcf_app`;
+  - lưới hồi quy dưới `trcf_app`;
+  - gieo quán 2 rồi cửa `--write-probe --expect-shops 2`;
+  - hai ca hỏng cố ý;
+  - đường lùi bằng dump.
+
+  **Qua** khi dòng cuối là `Tất cả PASS`. Chép vào sổ bốn dòng `thời gian …` và dòng `ước cửa sổ …`.
+- **Tổng thời gian dưới 30′.** Diễn tập tự kiểm dòng `ước cửa sổ`: báo cáo + `boot-migrate` + cửa + boot < 1800 s.
+- **`trcf_deploy` của quán đã có `MIGRATION_DATABASE_URL`** (555.1):
+
+  ```bash
+  cd ~/fnberp && docker compose config | grep -c MIGRATION_DATABASE_URL   # ≥ 1
+  ```
+
+**1. Build + kéo ảnh (KHÔNG `up`).** Như pha 2 bước 1: tag `sha-<p4>`, `docker pull`, ghi digest và tag đang chạy (đường lùi) vào sổ. **Không** sửa `.env`, **không** `up`.
+
+**2. Vài ngày trước cửa sổ — dựng vai + preflight.** Quán vẫn bán trên ảnh cũ và vai `trcf`. Dựng vai là việc cấp cụm, không đổi dữ liệu nghiệp vụ, và chạy lại vô hại:
+
+```bash
+cd ~/fnberp
+APP_PW=$(openssl rand -hex 24); BYP_PW=$(openssl rand -hex 24)
+BACKEND_IMAGE_TAG=sha-<p4> docker compose run --rm --no-deps \
+  -e ADMIN_DATABASE_URL="postgresql://trcf:<DB_PASSWORD>@postgres:5432/trcf_erp" \
+  -e DB_APP_PASSWORD="$APP_PW" -e DB_BYPASS_PASSWORD="$BYP_PW" \
+  backend node dist/setup-db-roles
+# Giữ mật khẩu cho tới cửa sổ — CHƯA ghi vào .env:
+umask 077; printf 'APP_PW=%s\nBYP_PW=%s\n' "$APP_PW" "$BYP_PW" > ~/fnberp/db-roles.secret
+# Preflight bằng vai app — ghi đè DATABASE_URL cho MỘT lệnh, không sửa .env:
+BACKEND_IMAGE_TAG=sha-<p4> docker compose run --rm --no-deps \
+  -e DATABASE_URL="postgresql://trcf_app:$APP_PW@postgres:5432/trcf_erp" \
+  backend node dist/phase4-preflight
+```
+
+- `setup-db-roles` **qua** khi in `✅ PASS — trcf_app chỉ DML, trcf_bypass BYPASSRLS, …`.
+- `phase4-preflight` **qua** khi in `✅ Preflight pha 4: 4/4 PASS` (`pooled` · `session-context` · `app-role` · `migration-role`).
+- Không qua ⇒ không lên lịch.
+- Chạy preflight **không** kèm `-e DATABASE_URL=…trcf_app…` thì nó đo vai `trcf` và FAIL `app-role`. Diễn tập đã đo ca này — đó là lệnh gõ thiếu, chưa phải kết luận.
+
+**3. Trong cửa sổ** — ngoài giờ bán, trần **30 phút** tính từ `stop backend` tới `up -d backend`. Chạy trong `tmux`, **đúng thứ tự**, ghi giờ bắt đầu. **Dừng ở lệnh đầu tiên không qua**, rồi đi đường lùi bên dưới.
+
+```bash
+tmux new -s phase4
+cd ~/fnberp
+docker compose stop backend
+# a. Báo cáo TRƯỚC — .env CHƯA sửa (vai trcf). --until: hôm qua (Coffeetree: 2026-09-27)
+docker compose run --rm --no-deps backend node dist/baseline-report \
+  --until <YYYY-MM-DD> --out /backups/phase4-before-<ngày>.json
+# b. Đổi ảnh + vai app — CHỈ lúc này:
+. ~/fnberp/db-roles.secret
+sed -i 's/^BACKEND_IMAGE_TAG=.*/BACKEND_IMAGE_TAG=sha-<p4>/' .env
+printf '\nDB_APP_USER=trcf_app\nDB_APP_PASSWORD=%s\n' "$APP_PW" >> .env
+docker compose config | grep -E 'image: .*trcf-erp-backend|DATABASE_URL'   # backend …:sha-<p4>; DATABASE_URL trcf_app; MIGRATION_DATABASE_URL trcf
+# c. Cổng sao lưu + migration bằng vai chủ — KHÔNG mở HTTP
+docker compose run --rm --no-deps backend node dist/boot-migrate
+# d. CỬA. Quán khách:
+docker compose run --rm --no-deps backend node dist/phase4-gate --before /backups/phase4-before-<ngày>.json
+#    Coffeetree: thêm mốc gốc (kiểm tệp có thật TRƯỚC):
+[ -f ~/baseline-055-2026-09-27.json ] && sha256sum ~/baseline-055-2026-09-27.json   # = 56a0418ecc9641b9347bace4e78d5798083267dee94c827c44406f5e6c09fe8a
+docker compose run --rm --no-deps -v ~/baseline-055-2026-09-27.json:/ref/baseline-055.json:ro \
+  backend node dist/phase4-gate --before /backups/phase4-before-<ngày>.json --reference /ref/baseline-055.json
+# e. CHỈ KHI d thoát 0:
+docker compose up -d backend
+docker compose logs backend | grep -E 'DbRole|Backend đang chạy'
+```
+
+Tiêu chí từng lệnh:
+
+- **(a)** Qua: in hash và `→ /backups/phase4-before-<ngày>.json`. Tệp đã có ⇒ thoát 1: đặt tên khác.
+- **(b)** Qua: `config` cho thấy ba điều. Sai ⇒ sửa `.env` lại. Chưa đổi gì trong DB.
+  - image backend `…:sha-<p4>`;
+  - `DATABASE_URL: postgresql://trcf_app:…`;
+  - `MIGRATION_DATABASE_URL: postgresql://trcf:…`.
+- **(c)** Qua: thoát 0 và in ba dòng.
+  - `Đã sao lưu và kiểm đọc lại được: /backups/trcf_erp-<ts>.dump` — **chép đường tệp này vào sổ**: đó là đường lùi của cả pha 4.
+  - `Migration chạy bằng vai "trcf" (MIGRATION_DATABASE_URL): 1 migration mới.`
+  - `✅ boot-migrate: 1 migration mới — backend CHƯA chạy`.
+
+  Thoát 1 (`⛔ Từ chối boot-migrate: …`) ⇒ chưa đổi gì trong DB, hoặc lô đã rollback.
+- **(d)** In mỗi phép một dòng `PASS|FAIL <tên> — <chi tiết>`:
+  - `migration-applied` — có dòng `EnableShopRls1783741700000`.
+  - `app-role` — `DATABASE_URL` là `trcf_app`: không SUPERUSER, không BYPASSRLS, không sở hữu bảng.
+  - `relrowsecurity` (FR-030) — đọc thẳng `pg_class`: mọi bảng `public` ngoài 12 bảng loại trừ đều bật RLS; `migrations`, `shops` và 10 bảng cửa ngõ thì không. Chi tiết in `bảng quên bật: 0`.
+  - `rls-catalog` — FORCE, policy `shop_isolation` (USING + WITH CHECK), `DEFAULT shop_id` đọc ngữ cảnh.
+  - `migrations-visible` — vai app không ngữ cảnh thấy đủ `migrations` + `shops`, 0 migration chờ.
+  - `no-context-empty` — vai app không ngữ cảnh ⇒ 0 dòng ở **mọi** bảng nghiệp vụ.
+  - `own-shop` — ngữ cảnh quán ⇒ thấy **đủ** số dòng của quán, từng bảng.
+  - `cross-read` (FR-029) — ngữ cảnh quán thật và **quán ma** (id = max + 1) ⇒ đọc dữ liệu quán khác ra 0 dòng ở mọi bảng có dữ liệu.
+  - `baseline-before-after` — 4 hash số liệu = báo cáo trước; số dòng chỉ được khác ở `migrations` (phải tăng).
+  - `baseline-reference` — chỉ Coffeetree: doanh thu theo ngày = mốc gốc.
+
+  **Qua** khi thoát 0 và dòng cuối là `✅ Cửa pha 4: 10/10 PASS` (quán khách `9/9`). Thoát 2 là sai tham số hoặc tệp: sửa lệnh, chưa phải kết luận. Cửa không ghi gì, nên chạy lại bao nhiêu lần cũng được.
+- **(e)** Qua cần đủ ba điều:
+  - log có `Backend chạy dưới vai "trcf_app" (RLS áp).`;
+  - log có `Backend đang chạy`;
+  - **bán một đơn thử** trên màn bán hàng (thu tiền, in bill), rồi thấy nó ở màn Đơn hàng. Màn nào **trắng** mà không báo lỗi là dấu hiệu ngữ cảnh quán không tới nơi ⇒ sự cố.
+
+  Log có `SUPERUSER — RLS KHÔNG áp` ⇒ `.env` bước (b) chưa ăn ⇒ sự cố.
+
+Khi xong: `rm ~/fnberp/db-roles.secret`. `BYP_PW` chép sang nơi giữ mật khẩu của TRCF; nó dùng cho `seed-shop` và đếm toàn bảng sau này.
+
+**Đường lùi** — ghi sự cố (mục 5) trong mọi trường hợp:
+
+- **(a) hoặc (c) thoát 1** ⇒ DB chưa đổi (lô migration rollback trọn). Trả `.env` rồi `up`:
+
+  ```bash
+  sed -i 's/^BACKEND_IMAGE_TAG=.*/BACKEND_IMAGE_TAG=<tag cũ trong sổ>/' .env
+  sed -i '/^DB_APP_USER=/d; /^DB_APP_PASSWORD=/d' .env
+  docker compose up -d backend
+  ```
+
+- **Cửa (d) thoát 1** ⇒ **KHÔNG** `up -d backend`. Quay về **dump của (c)** bằng lệnh khôi phục ở mục [Đứt giữa chừng](#đứt-giữa-chừng--mất-điện-đứt-ssh-tiến-trình-bị-giết):
+
+  ```bash
+  docker compose cp backend:/backups/trcf_erp-<ts>.dump ./restore.dump
+  docker compose cp ./restore.dump postgres:/tmp/restore.dump
+  docker compose exec -T postgres dropdb -U trcf --force trcf_erp
+  docker compose exec -T postgres createdb -U trcf trcf_erp
+  docker compose exec -T postgres pg_restore -U trcf --no-owner --no-privileges --exit-on-error \
+    -d trcf_erp /tmp/restore.dump
+  ```
+
+  Rồi trả `.env` như trên (tag cũ + gỡ `DB_APP_USER`/`DB_APP_PASSWORD`) và `up -d backend`. Backend đã dừng từ trước (a), nên **không mất đơn nào**. Diễn tập đã đo: khôi phục dump của `boot-migrate` ra schema `pg_dump -s` **đúng bằng** trước pha 4, 0 bảng RLS. `--no-privileges` bỏ luôn quyền của `trcf_app` — đúng ý, vì backend lùi về vai `trcf`. Vai vẫn còn trong cụm, vô hại; cửa sổ sau chạy lại `setup-db-roles`.
+- **Sau `up -d backend`** (đơn thử hỏng, màn trắng, sự cố trong 7 ngày) ⇒ cùng đường: dump của (c) + tag cũ + gỡ `DB_APP_USER`. **Mọi đơn bán sau giờ chụp dump sẽ mất** — cân nhắc với chủ quán trước khi làm.
+
+**4. Ghi sổ** — mỗi ô của quán trong `specs/055-saas/trien-khai-pha-4.md`: diễn tập (bốn thời gian + ước cửa sổ), CI run, tag + digest, `setup-db-roles` + preflight, cửa sổ, **dump của `boot-migrate`**, cửa (`n/n`), dòng `(RLS áp)`, đơn thử, ngày 1. Dán nguyên dòng in ra — không điền số ước.
+
+**5. Luật 7 ngày và sự cố.** Ngày 1 là ngày sau cửa sổ đã `up -d backend` với cửa PASS. Mỗi ngày trong 7 ngày, chạy hai kiểm chỉ-đọc. Cả hai chạy được lúc đang bán; kiểm không so báo cáo:
+
+```bash
+docker compose run --rm --no-deps backend node dist/phase4-gate
+docker compose logs backend | grep DbRole | tail -1
+```
+
+- Lệnh đầu **qua** khi thoát 0 và dòng cuối là `✅ Kiểm RLS pha 4 (không so báo cáo — không phải cửa): 8/8 PASS`. Hai kết nối nhìn **cùng một snapshot**, nên đơn bán chen giữa hai lần đếm không làm đỏ giả.
+- Lệnh sau phải in `Backend chạy dưới vai "trcf_app" (RLS áp).`
+
+**Sự cố pha 4** là một trong các việc sau:
+
+- cửa (d) thoát 1, hoặc phải quay về dump;
+- kiểm hằng ngày thoát 1 ở bất kỳ ngày nào, nhất là `relrowsecurity` nêu tên một bảng: một bản cập nhật sau đã thêm bảng mà quên bật RLS;
+- backend không khởi động, hoặc log mất dòng `(RLS áp)`;
+- một màn **trắng** hoặc thiếu dữ liệu mà trước đó có (đọc ngoài ngữ cảnh quán bị RLS lọc về 0);
+- một đường ghi báo lỗi 5xx, ví dụ `INSERT` thiếu ngữ cảnh chết `23502`, hoặc `WITH CHECK` chặn;
+- số liệu ngày/ca/kho/điểm lệch giữa các màn.
+
+Có sự cố ⇒ (1) **không** sang quán khách; (2) lùi quán đó bằng dump của `boot-migrate` + tag cũ + gỡ `DB_APP_USER` (mất đơn sau giờ dump — cân nhắc với chủ quán); (3) ghi vào bảng nhật ký sự cố của sổ + một dòng `NHAT-KY.md`; (4) sửa, diễn tập lại trên bản sao, mở cửa sổ mới và **đếm lại 7 ngày từ đầu**.
 
 ---
 
