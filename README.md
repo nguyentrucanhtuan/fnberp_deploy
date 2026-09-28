@@ -929,7 +929,7 @@ Cửa **qua** khi đọc chéo ra 0 dòng ở mọi bảng, và không bảng ng
 
 Thứ tự quán như pha 1/2: **Coffeetree trước**, chạy **trọn 7 ngày không sự cố**, rồi tới ba quán khách, **từng quán một**. Ghi từng ô vào sổ `specs/055-saas/trien-khai-pha-4.md` (repo umbrella). Quán nào dừng ở bước nào thì **không đi tiếp** ở quán đó.
 
-> ⛔ **`--write-probe` KHÔNG BAO GIỜ dùng ở quán.** Cờ này cho cửa thử `UPDATE`/`DELETE` chéo trong một transaction `ROLLBACK`. Chỉ diễn tập trên bản sao, CI và e2e được dùng nó. Database quán không bị ghi thử, dù có `ROLLBACK`. Ở quán, phép `cross-write` **vắng** khỏi danh sách: cửa không in `PASS` giả cho phép không chạy. Tính chất "`UPDATE`/`DELETE` chéo khớp 0 dòng" đã đo trên bản sao hai quán. Ở quán, phép `rls-catalog` kiểm policy `FOR ALL` phủ nó.
+> ⛔ **`--write-probe` KHÔNG BAO GIỜ dùng ở quán** — CLI tự từ chối (thoát 2) trên database tên không kết thúc `_test`. Cờ này cho cửa thử `UPDATE`/`DELETE` chéo trong một transaction `ROLLBACK`. Chỉ diễn tập trên bản sao, CI và e2e được dùng nó. Database quán không bị ghi thử, dù có `ROLLBACK`. Ở quán, phép `cross-write` **vắng** khỏi danh sách: cửa không in `PASS` giả cho phép không chạy. Tính chất "`UPDATE`/`DELETE` chéo khớp 0 dòng" đã đo trên bản sao hai quán. Ở quán, phép `rls-catalog` kiểm policy `FOR ALL` phủ nó.
 
 > ⚠️ **Cửa chạy TRƯỚC `up`, trên DB đứng yên.** Migration pha 4 là migration thường, tự chạy lúc boot. Để cửa chạy trước khi backend phục vụ request nào dưới RLS, cửa sổ tách hai bước đầu của boot ra thành `node dist/boot-migrate`: cổng sao lưu, rồi migration bằng vai chủ. Lệnh này **không** mở HTTP. Cửa FAIL thì chưa request nào đi qua, và dump của `boot-migrate` là đường lùi trọn vẹn.
 
@@ -954,6 +954,7 @@ Thứ tự quán như pha 1/2: **Coffeetree trước**, chạy **trọn 7 ngày 
   - boot dưới `trcf_app`;
   - lưới hồi quy dưới `trcf_app`;
   - gieo quán 2 rồi cửa `--write-probe --expect-shops 2`;
+  - lùi mềm: boot dưới vai `trcf` sau pha 4;
   - hai ca hỏng cố ý;
   - đường lùi bằng dump.
 
@@ -1000,6 +1001,7 @@ docker compose run --rm --no-deps backend node dist/baseline-report \
   --until <YYYY-MM-DD> --out /backups/phase4-before-<ngày>.json
 # b. Đổi ảnh + vai app — CHỈ lúc này:
 . ~/fnberp/db-roles.secret
+[ -n "${APP_PW:-}" ] || echo "⛔ THIẾU APP_PW — DỪNG, chưa sửa .env"
 sed -i 's/^BACKEND_IMAGE_TAG=.*/BACKEND_IMAGE_TAG=sha-<p4>/' .env
 printf '\nDB_APP_USER=trcf_app\nDB_APP_PASSWORD=%s\n' "$APP_PW" >> .env
 docker compose config | grep -E 'image: .*trcf-erp-backend|DATABASE_URL'   # backend …:sha-<p4>; DATABASE_URL trcf_app; MIGRATION_DATABASE_URL trcf
@@ -1019,7 +1021,7 @@ docker compose logs backend | grep -E 'DbRole|Backend đang chạy'
 Tiêu chí từng lệnh:
 
 - **(a)** Qua: in hash và `→ /backups/phase4-before-<ngày>.json`. Tệp đã có ⇒ thoát 1: đặt tên khác.
-- **(b)** Qua: `config` cho thấy ba điều. Sai ⇒ sửa `.env` lại. Chưa đổi gì trong DB.
+- **(b)** Qua: dòng kiểm ngay sau `. ~/fnberp/db-roles.secret` **không** in `⛔ THIẾU APP_PW`, và `config` cho thấy ba điều. In `⛔ THIẾU APP_PW` (tệp mất/rỗng) ⇒ **dừng**, chưa gõ hai lệnh sửa `.env` — gõ tiếp là ghi `DB_APP_PASSWORD=` rỗng. Tìm lại tệp hoặc chạy lại `setup-db-roles` với mật khẩu mới (bước 2) rồi làm lại (b). `config` sai ⇒ sửa `.env` lại. Chưa đổi gì trong DB.
   - image backend `…:sha-<p4>`;
   - `DATABASE_URL: postgresql://trcf_app:…`;
   - `MIGRATION_DATABASE_URL: postgresql://trcf:…`.
@@ -1073,7 +1075,17 @@ Khi xong: `rm ~/fnberp/db-roles.secret`. `BYP_PW` chép sang nơi giữ mật kh
   ```
 
   Rồi trả `.env` như trên (tag cũ + gỡ `DB_APP_USER`/`DB_APP_PASSWORD`) và `up -d backend`. Backend đã dừng từ trước (a), nên **không mất đơn nào**. Diễn tập đã đo: khôi phục dump của `boot-migrate` ra schema `pg_dump -s` **đúng bằng** trước pha 4, 0 bảng RLS. `--no-privileges` bỏ luôn quyền của `trcf_app` — đúng ý, vì backend lùi về vai `trcf`. Vai vẫn còn trong cụm, vô hại; cửa sổ sau chạy lại `setup-db-roles`.
-- **Sau `up -d backend`** (đơn thử hỏng, màn trắng, sự cố trong 7 ngày) ⇒ cùng đường: dump của (c) + tag cũ + gỡ `DB_APP_USER`. **Mọi đơn bán sau giờ chụp dump sẽ mất** — cân nhắc với chủ quán trước khi làm.
+- **Sau `up -d backend`** — hai đường, chọn theo triệu chứng:
+  - **Lùi mềm — chọn TRƯỚC** khi triệu chứng là **màn trắng / thiếu dữ liệu** mà số liệu trong DB vẫn đúng (ngữ cảnh quán không tới nơi, RLS lọc về 0). Giữ ảnh p4 và migration, chỉ đưa backend về vai `trcf`:
+
+    ```bash
+    sed -i '/^DB_APP_USER=/d; /^DB_APP_PASSWORD=/d' .env
+    docker compose up -d backend
+    docker compose logs backend | grep -E 'DbRole|Backend đang chạy'
+    ```
+
+    Qua khi log có `Backend đang chạy` và **cảnh báo** `Backend chạy dưới vai "trcf" (SUPERUSER) — RLS KHÔNG áp.` Superuser bỏ qua RLS nên màn hiện lại đủ; **không mất đơn nào**. Chỉ dùng được khi quán có **một** quán active (hơn một ⇒ backend từ chối khởi động dưới superuser). Diễn tập đã chạy đúng bước này sau pha 4 (bước 7b). Đây là trạng thái tạm: quán vẫn tính là sự cố (mục 5); sửa rồi mở cửa sổ mới để quay lại vai `trcf_app`.
+  - **Quay về dump** khi **dữ liệu sai** (ghi nhầm, mất dòng, số lệch) hoặc lùi mềm không đủ: dump của (c) + tag cũ + gỡ `DB_APP_USER`, như trên. **Mọi đơn bán sau giờ chụp dump sẽ mất** — cân nhắc với chủ quán trước khi làm.
 
 **4. Ghi sổ** — mỗi ô của quán trong `specs/055-saas/trien-khai-pha-4.md`: diễn tập (bốn thời gian + ước cửa sổ), CI run, tag + digest, `setup-db-roles` + preflight, cửa sổ, **dump của `boot-migrate`**, cửa (`n/n`), dòng `(RLS áp)`, đơn thử, ngày 1. Dán nguyên dòng in ra — không điền số ước.
 
@@ -1096,7 +1108,7 @@ docker compose logs backend | grep DbRole | tail -1
 - một đường ghi báo lỗi 5xx, ví dụ `INSERT` thiếu ngữ cảnh chết `23502`, hoặc `WITH CHECK` chặn;
 - số liệu ngày/ca/kho/điểm lệch giữa các màn.
 
-Có sự cố ⇒ (1) **không** sang quán khách; (2) lùi quán đó bằng dump của `boot-migrate` + tag cũ + gỡ `DB_APP_USER` (mất đơn sau giờ dump — cân nhắc với chủ quán); (3) ghi vào bảng nhật ký sự cố của sổ + một dòng `NHAT-KY.md`; (4) sửa, diễn tập lại trên bản sao, mở cửa sổ mới và **đếm lại 7 ngày từ đầu**.
+Có sự cố ⇒ (1) **không** sang quán khách; (2) lùi quán đó — lùi mềm (gỡ `DB_APP_USER`) nếu chỉ là màn trắng/thiếu dữ liệu, dump của `boot-migrate` + tag cũ + gỡ `DB_APP_USER` nếu dữ liệu sai (mất đơn sau giờ dump — cân nhắc với chủ quán); (3) ghi vào bảng nhật ký sự cố của sổ + một dòng `NHAT-KY.md`; (4) sửa, diễn tập lại trên bản sao, mở cửa sổ mới và **đếm lại 7 ngày từ đầu**.
 
 ---
 
