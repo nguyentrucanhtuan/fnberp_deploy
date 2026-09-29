@@ -563,11 +563,13 @@ Lệnh cũng chụp dump trước khi đảo. `pnpm migration:revert` / `typeorm
 
 #### Triển khai pha 1 ở một quán (552.4) — `TimestamptzEverywhere1783741000000`
 
-Thứ tự bắt buộc: **Coffeetree trước**, chạy **trọn 7 ngày không sự cố** rồi mới tới ba quán khách, **từng quán một**. Mỗi quán đi đủ chuỗi dưới; ghi từng ô vào sổ `specs/055-saas/trien-khai-pha-1.md` (repo umbrella `fnberp_fullstack`). Quán nào dừng ở bước nào thì **không đi tiếp** bước sau ở quán đó.
+> ⏱️ **Quyết định 29/09 (chủ dự án chốt): thời gian theo dõi mỗi pha rút từ 7 ngày xuống 1 ngày** — để kịp triển khai Zalo Mini App rồi `trcf_mobile_app`. Chấp nhận: lỗi chỉ hiện ở chu kỳ tuần (báo cáo tuần, món bán chạy "tuần trước", ca/bảng công theo tuần, việc chạy nền theo tuần) có thể lộ ra SAU khi cả bốn quán đã chuyển ⇒ sửa tiến bằng mã, không lùi schema. Bù lại: **kiểm bù** trước khi sang quán khách (pha 1: so báo cáo theo tuần của các tuần đã qua trên bản sao trước/sau migration · pha 2: chạy thử mỗi luồng ít dùng một phiếu trên máy quán · pha 4: soát màn/việc nền trả rỗng). Nguồn: PRD 055 FR-040.
+
+Thứ tự bắt buộc: **Coffeetree trước**, chạy **1 ngày không sự cố** (quyết định 29/09, xem khung dưới) rồi mới tới ba quán khách, **từng quán một** (được làm cùng một đêm, quán sau chỉ bắt đầu khi quán trước đã qua cửa). Mỗi quán đi đủ chuỗi dưới; ghi từng ô vào sổ `specs/055-saas/trien-khai-pha-1.md` (repo umbrella `fnberp_fullstack`). Quán nào dừng ở bước nào thì **không đi tiếp** bước sau ở quán đó.
 
 **0. Điều kiện trước khi lên lịch** — cả bốn phải đạt:
 
-- Quán khách: Coffeetree đã đủ 7 ngày không sự cố (mục 5). Coffeetree: tệp mốc gốc đã chép lên máy và `sha256sum` khớp (bước 1).
+- Quán khách: Coffeetree đã đủ 1 ngày không sự cố (mục 5) + kiểm bù pha 1 đạt. Coffeetree: tệp mốc gốc đã chép lên máy và `sha256sum` khớp (bước 1).
 - Cửa sổ **ngoài giờ bán**, trần **30 phút** từ `stop backend` tới `up -d backend`. Bản sao Coffeetree đo: runner 0,5 s (0,8 s kể cả sao lưu), báo cáo + cửa vài giây mỗi lệnh.
 - **Diễn tập trọn chuỗi trên bản sao dump của CHÍNH quán đó** (không dùng bản sao Coffeetree thay cho quán khách) — trên máy local, trong `trcf_erp_backend/`. Dump lấy theo [§8](#khôi-phục-một-bản-dump-xuống-postgres-17-máy-local). Quán khách chưa có mốc gốc thì chụp một lần từ bản sao đã khôi phục (Postgres 17 tạm cổng 55432 như §8), rồi chạy diễn tập với chính tệp đó:
 
@@ -664,9 +666,9 @@ docker compose up -d backend
 
 Cửa (c) chạy lại được bao nhiêu lần cũng được (không ghi gì). Chạy khi backend **đang bán** thì `baseline-before-after` đỏ vì có đơn mới — chỉ tin kết quả trong cửa sổ.
 
-**4. Ghi sổ** — mỗi ô của quán trong `specs/055-saas/trien-khai-pha-1.md`: kết quả preflight, diễn tập bản sao (thời gian runner), lưới bản sao, giờ cửa sổ, tệp dump, thời gian runner, gate (7/7 hoặc 8/8), hash trước/sau, ngày bắt đầu đếm 7 ngày. Dán nguyên dòng in ra — không điền số ước.
+**4. Ghi sổ** — mỗi ô của quán trong `specs/055-saas/trien-khai-pha-1.md`: kết quả preflight, diễn tập bản sao (thời gian runner), lưới bản sao, giờ cửa sổ, tệp dump, thời gian runner, gate (7/7 hoặc 8/8), hash trước/sau, ngày theo dõi. Dán nguyên dòng in ra — không điền số ước.
 
-**5. Luật 7 ngày và sự cố.** Ngày 1 là ngày sau cửa sổ đã `up -d backend` với gate PASS. Mỗi ngày trong 7 ngày, chạy kiểm chỉ-đọc (dữ liệu mới vẫn phải khớp mốc đối chiếu):
+**5. Luật 1 ngày và sự cố** (trước 29/09 là 7 ngày). Ngày 1 là ngày sau cửa sổ đã `up -d backend` với gate PASS. Trong ngày theo dõi (và tiếp tục hằng ngày tới khi pha kế lên), chạy kiểm chỉ-đọc (dữ liệu mới vẫn phải khớp mốc đối chiếu):
 
 ```bash
 docker compose run --rm --no-deps backend node dist/timestamptz-preflight
@@ -683,7 +685,7 @@ docker compose run --rm --no-deps backend node dist/timestamptz-preflight
 - backend không khởi động, hoặc lỗi 5xx ở màn có lọc ngày;
 - chủ quán báo số tiền ngày/ca không khớp két mà nguyên nhân là ngày/giờ.
 
-Có sự cố ⇒ (1) **không** sang quán khách; (2) lùi quán đó (`--down` nếu cửa còn mở, không thì quay về dump — mất đơn sau giờ dump, cân nhắc với chủ quán); (3) ghi vào bảng nhật ký sự cố của sổ + một dòng `NHAT-KY.md`; (4) sửa, diễn tập lại trên bản sao, mở cửa sổ mới và **đếm lại 7 ngày từ đầu**.
+Có sự cố ⇒ (1) **không** sang quán khách; (2) lùi quán đó (`--down` nếu cửa còn mở, không thì quay về dump — mất đơn sau giờ dump, cân nhắc với chủ quán); (3) ghi vào bảng nhật ký sự cố của sổ + một dòng `NHAT-KY.md`; (4) sửa, diễn tập lại trên bản sao, mở cửa sổ mới và **đếm lại ngày theo dõi từ đầu**.
 
 #### Triển khai pha 2 ở một quán (553.6) — năm migration một chiều 553.2–553.5
 
@@ -701,7 +703,7 @@ Pha 2 gắn `shop_id` vào mọi bảng nghiệp vụ. Nó gồm **năm** migrat
 4. `ExternalRefsAndZaloAppShops1783741500000` (ER).
 5. `TenantScopedUniques1783741600000` (TU) — lô kèm rào thường `ExternalRefFence1783741550000`.
 
-Thứ tự quán như pha 1: **Coffeetree trước**, chạy **trọn 7 ngày không sự cố**, rồi tới ba quán khách, **từng quán một**. Ghi từng ô vào sổ `specs/055-saas/trien-khai-pha-2.md` (repo umbrella `fnberp_fullstack`). Quán nào dừng ở bước nào thì **không đi tiếp** ở quán đó.
+Thứ tự quán như pha 1: **Coffeetree trước**, chạy **1 ngày không sự cố** + kiểm bù, rồi tới ba quán khách, **từng quán một** (được cùng một đêm). Ghi từng ô vào sổ `specs/055-saas/trien-khai-pha-2.md` (repo umbrella `fnberp_fullstack`). Quán nào dừng ở bước nào thì **không đi tiếp** ở quán đó.
 
 > ⚠️ **Ảnh pha 2 CHỈ đổi TRONG cửa sổ.** Khác pha 1: ảnh pha 2 **không khởi động được** trên schema trước pha 2. E-18 từ chối vì rào `ShopIdFence` đứng sau migration một chiều chưa chạy; diễn tập đo được câu `Cần chạy tay BigintLargeTables1783741100000 trước`. "Ghim ảnh rồi `up -d` vài ngày trước" như pha 1 là **dừng bán ngay**. Trước cửa sổ chỉ làm hai việc: `docker pull` ảnh theo tag, và chạy preflight bằng `BACKEND_IMAGE_TAG=… docker compose run --rm …`. **Không sửa `.env`, không `up`.**
 
@@ -714,7 +716,7 @@ Thứ tự quán như pha 1: **Coffeetree trước**, chạy **trọn 7 ngày kh
 
 **0. Điều kiện trước khi lên lịch** — cả năm phải đạt:
 
-- **Cửa 552 đã xanh ở CẢ BỐN quán** (sổ `trien-khai-pha-1.md`: 7 ngày của Coffeetree + gate của ba quán khách). Pha 2 không bắt đầu ở quán nào khi còn một quán chưa qua pha 1.
+- **Cửa 552 đã xanh ở CẢ BỐN quán** (sổ `trien-khai-pha-1.md`: 1 ngày của Coffeetree + gate + 1 ngày của ba quán khách). Pha 2 không bắt đầu ở quán nào khi còn một quán chưa qua pha 1.
 - **CI "Lưới hồi quy" xanh trên đúng commit của ảnh.** Trên GitHub → `trcf_erp_backend` → Actions → `Regression grid`, lượt chạy của đúng commit `<p2>` mà tag `sha-<p2>` trỏ tới phải xanh. Ghi URL lượt chạy vào sổ.
 - **Diễn tập pha 2 trên bản sao dump MỚI của CHÍNH quán đó — kể cả Coffeetree** (trên máy local, trong `trcf_erp_backend/`). Dump phải lấy **sau** khi quán đã qua pha 1 (diễn tập tự bỏ bước pha 1 khi nguồn đã áp), để catalog, fingerprint và các migration thường còn chờ trong diễn tập đúng bằng quán thật. Quán khách chụp mốc gốc một lần từ bản sao đã khôi phục, như bước 0 của pha 1:
 
@@ -841,7 +843,7 @@ Tiêu chí từng lệnh:
 - **Cửa (d) thoát 1** ⇒ **KHÔNG** `up -d backend`. Quay về dump của lượt BIG + trả tag pha 1 + `up -d backend`.
   - `--down TenantScopedUniques1783741600000` chỉ đảo được mỗi TU. Chỉ dùng khi FAIL duy nhất là `tenant-uniques` và cần soi thêm trước khi quyết. Còn FAIL khác thì vẫn phải về dump.
   - Riêng Coffeetree: `baseline-reference` FAIL với chi tiết `đã lệch từ --before`, trong khi `baseline-before-after` PASS ⇒ migration không đổi số, mà doanh thu 29/08–27/09 đã đổi **trước** cửa sổ. Vẫn là FAIL: báo người phụ trách, người đó quyết trong trần 30 phút và ghi sổ. Không quyết kịp ⇒ về dump.
-- **Sau `up -d backend`** (đơn thử hỏng, hoặc sự cố trong 7 ngày) ⇒ quay về dump của lượt BIG + trả tag pha 1. **Mọi đơn bán sau giờ chụp dump sẽ mất** — cân nhắc với chủ quán trước khi làm.
+- **Sau `up -d backend`** (đơn thử hỏng, hoặc sự cố trong ngày theo dõi) ⇒ quay về dump của lượt BIG + trả tag pha 1. **Mọi đơn bán sau giờ chụp dump sẽ mất** — cân nhắc với chủ quán trước khi làm.
 
 **4. Ghi sổ** — mỗi ô của quán trong `specs/055-saas/trien-khai-pha-2.md`:
 
@@ -858,7 +860,7 @@ Tiêu chí từng lệnh:
 
 Dán nguyên dòng in ra — không điền số ước.
 
-**5. Luật 7 ngày và sự cố.** Ngày 1 là ngày sau cửa sổ đã `up -d backend` với cửa PASS. Mỗi ngày trong 7 ngày, chạy hai kiểm chỉ-đọc:
+**5. Luật 1 ngày và sự cố** (trước 29/09 là 7 ngày). Ngày 1 là ngày sau cửa sổ đã `up -d backend` với cửa PASS. Trong ngày theo dõi (và tiếp tục hằng ngày tới khi pha kế lên), chạy hai kiểm chỉ-đọc:
 
 ```bash
 docker compose run --rm --no-deps backend node dist/phase2-gate --schema-only
@@ -878,7 +880,7 @@ docker compose logs --since 24h backend | grep -E '2350[235]'
 - mã gửi ra ngoài sai: MoMo, hoá đơn điện tử hoặc Zalo Checkout báo không tìm thấy giao dịch, hoặc tiền về không khớp đơn;
 - số liệu ngày/ca/kho/điểm lệch giữa các màn, hoặc chủ quán báo két không khớp mà nguyên nhân là dữ liệu sau pha 2.
 
-Có sự cố ⇒ (1) **không** sang quán khách; (2) lùi quán đó bằng dump của lượt BIG + tag pha 1 (mất đơn sau giờ dump — cân nhắc với chủ quán); (3) ghi vào bảng nhật ký sự cố của sổ + một dòng `NHAT-KY.md`; (4) sửa, diễn tập lại trên bản sao, mở cửa sổ mới và **đếm lại 7 ngày từ đầu**.
+Có sự cố ⇒ (1) **không** sang quán khách; (2) lùi quán đó bằng dump của lượt BIG + tag pha 1 (mất đơn sau giờ dump — cân nhắc với chủ quán); (3) ghi vào bảng nhật ký sự cố của sổ + một dòng `NHAT-KY.md`; (4) sửa, diễn tập lại trên bản sao, mở cửa sổ mới và **đếm lại ngày theo dõi từ đầu**.
 
 #### Tách vai database (555.1) — backend chạy bằng vai KHÔNG phải chủ bảng
 
@@ -927,7 +929,7 @@ Bằng chứng máy móc là **cửa pha 4** — một lệnh trong ảnh. Nó d
 
 Cửa **qua** khi đọc chéo ra 0 dòng ở mọi bảng, và không bảng nghiệp vụ nào còn `relrowsecurity = false`.
 
-Thứ tự quán như pha 1/2: **Coffeetree trước**, chạy **trọn 7 ngày không sự cố**, rồi tới ba quán khách, **từng quán một**. Ghi từng ô vào sổ `specs/055-saas/trien-khai-pha-4.md` (repo umbrella). Quán nào dừng ở bước nào thì **không đi tiếp** ở quán đó.
+Thứ tự quán như pha 1/2: **Coffeetree trước**, chạy **1 ngày không sự cố** + kiểm bù, rồi tới ba quán khách, **từng quán một** (được cùng một đêm). Ghi từng ô vào sổ `specs/055-saas/trien-khai-pha-4.md` (repo umbrella). Quán nào dừng ở bước nào thì **không đi tiếp** ở quán đó.
 
 > ⛔ **`--write-probe` KHÔNG BAO GIỜ dùng ở quán** — CLI tự từ chối (thoát 2) trên database tên không kết thúc `_test`. Cờ này cho cửa thử `UPDATE`/`DELETE` chéo trong một transaction `ROLLBACK`. Chỉ diễn tập trên bản sao, CI và e2e được dùng nó. Database quán không bị ghi thử, dù có `ROLLBACK`. Ở quán, phép `cross-write` **vắng** khỏi danh sách: cửa không in `PASS` giả cho phép không chạy. Tính chất "`UPDATE`/`DELETE` chéo khớp 0 dòng" đã đo trên bản sao hai quán. Ở quán, phép `rls-catalog` kiểm policy `FOR ALL` phủ nó.
 
@@ -1089,7 +1091,7 @@ Khi xong: `rm ~/fnberp/db-roles.secret`. `BYP_PW` chép sang nơi giữ mật kh
 
 **4. Ghi sổ** — mỗi ô của quán trong `specs/055-saas/trien-khai-pha-4.md`: diễn tập (bốn thời gian + ước cửa sổ), CI run, tag + digest, `setup-db-roles` + preflight, cửa sổ, **dump của `boot-migrate`**, cửa (`n/n`), dòng `(RLS áp)`, đơn thử, ngày 1. Dán nguyên dòng in ra — không điền số ước.
 
-**5. Luật 7 ngày và sự cố.** Ngày 1 là ngày sau cửa sổ đã `up -d backend` với cửa PASS. Mỗi ngày trong 7 ngày, chạy hai kiểm chỉ-đọc. Cả hai chạy được lúc đang bán; kiểm không so báo cáo:
+**5. Luật 1 ngày và sự cố** (trước 29/09 là 7 ngày). Ngày 1 là ngày sau cửa sổ đã `up -d backend` với cửa PASS. Trong ngày theo dõi (và tiếp tục hằng ngày tới khi pha kế lên), chạy hai kiểm chỉ-đọc. Cả hai chạy được lúc đang bán; kiểm không so báo cáo:
 
 ```bash
 docker compose run --rm --no-deps backend node dist/phase4-gate
@@ -1108,7 +1110,7 @@ docker compose logs backend | grep DbRole | tail -1
 - một đường ghi báo lỗi 5xx, ví dụ `INSERT` thiếu ngữ cảnh chết `23502`, hoặc `WITH CHECK` chặn;
 - số liệu ngày/ca/kho/điểm lệch giữa các màn.
 
-Có sự cố ⇒ (1) **không** sang quán khách; (2) lùi quán đó — lùi mềm (gỡ `DB_APP_USER`) nếu chỉ là màn trắng/thiếu dữ liệu, dump của `boot-migrate` + tag cũ + gỡ `DB_APP_USER` nếu dữ liệu sai (mất đơn sau giờ dump — cân nhắc với chủ quán); (3) ghi vào bảng nhật ký sự cố của sổ + một dòng `NHAT-KY.md`; (4) sửa, diễn tập lại trên bản sao, mở cửa sổ mới và **đếm lại 7 ngày từ đầu**.
+Có sự cố ⇒ (1) **không** sang quán khách; (2) lùi quán đó — lùi mềm (gỡ `DB_APP_USER`) nếu chỉ là màn trắng/thiếu dữ liệu, dump của `boot-migrate` + tag cũ + gỡ `DB_APP_USER` nếu dữ liệu sai (mất đơn sau giờ dump — cân nhắc với chủ quán); (3) ghi vào bảng nhật ký sự cố của sổ + một dòng `NHAT-KY.md`; (4) sửa, diễn tập lại trên bản sao, mở cửa sổ mới và **đếm lại ngày theo dõi từ đầu**.
 
 ---
 
