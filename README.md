@@ -564,12 +564,13 @@ Lệnh cũng chụp dump trước khi đảo. `pnpm migration:revert` / `typeorm
 #### Triển khai pha 1 ở một quán (552.4) — `TimestamptzEverywhere1783741000000`
 
 > ⏱️ **Quyết định 29/09 (chủ dự án chốt): thời gian theo dõi mỗi pha rút từ 7 ngày xuống 1 ngày** — để kịp triển khai Zalo Mini App rồi `trcf_mobile_app`. Chấp nhận: lỗi chỉ hiện ở chu kỳ tuần (báo cáo tuần, món bán chạy "tuần trước", ca/bảng công theo tuần, việc chạy nền theo tuần) có thể lộ ra SAU khi cả bốn quán đã chuyển ⇒ sửa tiến bằng mã, không lùi schema. Bù lại: **kiểm bù** trước khi sang quán khách (pha 1: so báo cáo theo tuần của các tuần đã qua trên bản sao trước/sau migration · pha 2: chạy thử mỗi luồng ít dùng một phiếu trên máy quán · pha 4: soát màn/việc nền trả rỗng). Nguồn: PRD 055 FR-040.
+> 🧭 **Thứ tự quán — quyết định 29/09 (chủ dự án chốt): Coffeetree POS đi TRỌN CHUỖI trước** (pha 1 → 1 ngày → pha 2 → 1 ngày → pha 4 → chạy ổn), **rồi quán khách mới bắt đầu**, mỗi quán lại đi pha 1 → 2 → 4; **Gác Đỏ đi cuối** (quán khách, dữ liệu lớn nhất). Lý do: Coffeetree là quán của chủ dự án — hỏng thì chỉ mình chịu; tới lúc quán khách bắt đầu, Coffeetree đã chạy ~1 tuần qua cả ba pha ⇒ lấy lại độ phủ chu kỳ tuần mà luật 1 ngày bỏ đi. Quán khách đứng yên ở `latest` (từ `main`, chưa có 055) trong lúc chờ ⇒ **KHÔNG gộp `main` (556.4) tới khi mọi quán khách qua pha 4.** Pha kế ở một quán đòi pha trước xanh ở **chính quán đó** + Coffeetree đã qua pha kế ấy.
 
-Thứ tự bắt buộc: **Coffeetree trước**, chạy **1 ngày không sự cố** (quyết định 29/09, xem khung dưới) rồi mới tới ba quán khách, **từng quán một** (được làm cùng một đêm, quán sau chỉ bắt đầu khi quán trước đã qua cửa). Mỗi quán đi đủ chuỗi dưới; ghi từng ô vào sổ `specs/055-saas/trien-khai-pha-1.md` (repo umbrella `fnberp_fullstack`). Quán nào dừng ở bước nào thì **không đi tiếp** bước sau ở quán đó.
+Thứ tự bắt buộc: **Coffeetree trước và đi trọn chuỗi pha 1 → 2 → 4** (xem hai khung trên), chạy **1 ngày không sự cố** mỗi pha; quán khách chỉ bắt đầu pha 1 sau khi Coffeetree đã qua pha 4 và chạy ổn, **từng quán một**, Gác Đỏ cuối. Mỗi quán đi đủ chuỗi dưới; ghi từng ô vào sổ `specs/055-saas/trien-khai-pha-1.md` (repo umbrella `fnberp_fullstack`). Quán nào dừng ở bước nào thì **không đi tiếp** bước sau ở quán đó.
 
 **0. Điều kiện trước khi lên lịch** — cả bốn phải đạt:
 
-- Quán khách: Coffeetree đã đủ 1 ngày không sự cố (mục 5) + kiểm bù pha 1 đạt. Coffeetree: tệp mốc gốc đã chép lên máy và `sha256sum` khớp (bước 1).
+- Quán khách: Coffeetree đã qua **pha 4** và chạy ổn (sổ pha 1/2/4) + kiểm bù pha 1 đạt. Coffeetree: tệp mốc gốc đã chép lên máy và `sha256sum` khớp (bước 1).
 - Cửa sổ **ngoài giờ bán**, trần **30 phút** từ `stop backend` tới `up -d backend`. Bản sao Coffeetree đo: runner 0,5 s (0,8 s kể cả sao lưu), báo cáo + cửa vài giây mỗi lệnh.
 - **Diễn tập trọn chuỗi trên bản sao dump của CHÍNH quán đó** (không dùng bản sao Coffeetree thay cho quán khách) — trên máy local, trong `trcf_erp_backend/`. Dump lấy theo [§8](#khôi-phục-một-bản-dump-xuống-postgres-17-máy-local). Quán khách chưa có mốc gốc thì chụp một lần từ bản sao đã khôi phục (Postgres 17 tạm cổng 55432 như §8), rồi chạy diễn tập với chính tệp đó:
 
@@ -703,7 +704,7 @@ Pha 2 gắn `shop_id` vào mọi bảng nghiệp vụ. Nó gồm **năm** migrat
 4. `ExternalRefsAndZaloAppShops1783741500000` (ER).
 5. `TenantScopedUniques1783741600000` (TU) — lô kèm rào thường `ExternalRefFence1783741550000`.
 
-Thứ tự quán như pha 1: **Coffeetree trước**, chạy **1 ngày không sự cố** + kiểm bù, rồi tới ba quán khách, **từng quán một** (được cùng một đêm). Ghi từng ô vào sổ `specs/055-saas/trien-khai-pha-2.md` (repo umbrella `fnberp_fullstack`). Quán nào dừng ở bước nào thì **không đi tiếp** ở quán đó.
+Thứ tự quán như pha 1: **Coffeetree trước** (1 ngày sau pha 1 của chính nó), chạy **1 ngày không sự cố** + kiểm bù; quán khách đi pha 2 sau pha 1 của chính quán đó, khi Coffeetree đã qua pha 4. Ghi từng ô vào sổ `specs/055-saas/trien-khai-pha-2.md` (repo umbrella `fnberp_fullstack`). Quán nào dừng ở bước nào thì **không đi tiếp** ở quán đó.
 
 > ⚠️ **Ảnh pha 2 CHỈ đổi TRONG cửa sổ.** Khác pha 1: ảnh pha 2 **không khởi động được** trên schema trước pha 2. E-18 từ chối vì rào `ShopIdFence` đứng sau migration một chiều chưa chạy; diễn tập đo được câu `Cần chạy tay BigintLargeTables1783741100000 trước`. "Ghim ảnh rồi `up -d` vài ngày trước" như pha 1 là **dừng bán ngay**. Trước cửa sổ chỉ làm hai việc: `docker pull` ảnh theo tag, và chạy preflight bằng `BACKEND_IMAGE_TAG=… docker compose run --rm …`. **Không sửa `.env`, không `up`.**
 
@@ -716,7 +717,7 @@ Thứ tự quán như pha 1: **Coffeetree trước**, chạy **1 ngày không s�
 
 **0. Điều kiện trước khi lên lịch** — cả năm phải đạt:
 
-- **Cửa 552 đã xanh ở CẢ BỐN quán** (sổ `trien-khai-pha-1.md`: 1 ngày của Coffeetree + gate + 1 ngày của ba quán khách). Pha 2 không bắt đầu ở quán nào khi còn một quán chưa qua pha 1.
+- **Cửa 552 đã xanh ở CHÍNH quán này** (sổ `trien-khai-pha-1.md`: gate + 1 ngày theo dõi), và với quán khách: Coffeetree đã qua pha 2 (thực tế: đã qua pha 4). ~~Trước 29/09: đòi cả bốn quán qua pha 1~~ — bỏ vì Coffeetree đi trọn chuỗi trước.
 - **CI "Lưới hồi quy" xanh trên đúng commit của ảnh.** Trên GitHub → `trcf_erp_backend` → Actions → `Regression grid`, lượt chạy của đúng commit `<p2>` mà tag `sha-<p2>` trỏ tới phải xanh. Ghi URL lượt chạy vào sổ.
 - **Diễn tập pha 2 trên bản sao dump MỚI của CHÍNH quán đó — kể cả Coffeetree** (trên máy local, trong `trcf_erp_backend/`). Dump phải lấy **sau** khi quán đã qua pha 1 (diễn tập tự bỏ bước pha 1 khi nguồn đã áp), để catalog, fingerprint và các migration thường còn chờ trong diễn tập đúng bằng quán thật. Quán khách chụp mốc gốc một lần từ bản sao đã khôi phục, như bước 0 của pha 1:
 
@@ -929,7 +930,7 @@ Bằng chứng máy móc là **cửa pha 4** — một lệnh trong ảnh. Nó d
 
 Cửa **qua** khi đọc chéo ra 0 dòng ở mọi bảng, và không bảng nghiệp vụ nào còn `relrowsecurity = false`.
 
-Thứ tự quán như pha 1/2: **Coffeetree trước**, chạy **1 ngày không sự cố** + kiểm bù, rồi tới ba quán khách, **từng quán một** (được cùng một đêm). Ghi từng ô vào sổ `specs/055-saas/trien-khai-pha-4.md` (repo umbrella). Quán nào dừng ở bước nào thì **không đi tiếp** ở quán đó.
+Thứ tự quán như pha 1/2: **Coffeetree trước** (1 ngày sau pha 2 của chính nó), chạy **1 ngày không sự cố** + kiểm bù; quán khách đi pha 4 sau pha 2 của chính quán đó. Ghi từng ô vào sổ `specs/055-saas/trien-khai-pha-4.md` (repo umbrella). Quán nào dừng ở bước nào thì **không đi tiếp** ở quán đó.
 
 > ⛔ **`--write-probe` KHÔNG BAO GIỜ dùng ở quán** — CLI tự từ chối (thoát 2) trên database tên không kết thúc `_test`. Cờ này cho cửa thử `UPDATE`/`DELETE` chéo trong một transaction `ROLLBACK`. Chỉ diễn tập trên bản sao, CI và e2e được dùng nó. Database quán không bị ghi thử, dù có `ROLLBACK`. Ở quán, phép `cross-write` **vắng** khỏi danh sách: cửa không in `PASS` giả cho phép không chạy. Tính chất "`UPDATE`/`DELETE` chéo khớp 0 dòng" đã đo trên bản sao hai quán. Ở quán, phép `rls-catalog` kiểm policy `FOR ALL` phủ nó.
 
