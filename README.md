@@ -690,11 +690,11 @@ Có sự cố ⇒ (1) **không** sang quán khách; (2) lùi quán đó (`--down
 
 #### Triển khai pha 2 ở một quán (553.6) — năm migration một chiều 553.2–553.5
 
-> ⛔ **CHƯA DÙNG ĐƯỢC NGUYÊN VĂN — chờ vá trước cửa sổ pha 2 đầu tiên** (review 28/09, retro 553 mục 12). Ba lỗi high:
-> ① `BACKUP_KEEP` mặc định 5 ⇒ lượt thứ sáu (chạy lại / chia cửa sổ) xoá mất dump BIG — đường lùi duy nhất;
-> ② kiểm log `grep '2350[235]'` không bao giờ bắt được gì (app không in SQLSTATE ra log);
-> ③ lùi bằng "xoá dòng tag" có thể kéo ảnh pha 2 (`latest` + `pull_policy: always`).
-> Cùng ba lỗi vừa: fingerprint preflight còn tuỳ chọn · khối khôi phục chung với pha 1 `up` backend trước khi trả tag · thiếu kiểm đĩa cho 5 dump. **Không lên lịch cửa sổ tới khi khối cảnh báo này được gỡ.**
+> ✅ **Đã vá 01/10 (retro 553 mục 12)** — ba lỗi high + ba lỗi vừa của bản 28/09:
+> ① dump BIG bị `BACKUP_KEEP` xoay mất ⇒ ngay sau lượt BIG **chép sang tên ngoài mẫu xoay vòng** `giu-pha2-BIG-<ts>.dump` (vòng xoay chỉ xoá `trcf_erp-<14 số>Z.dump`), cộng bản sao R2 tự đẩy;
+> ② `grep '2350[235]'` không bắt được gì (`QueryFailedFilter` đổi 23505/23503 thành 409/400 KHÔNG log; 23502 log bằng chữ) ⇒ kiểm hằng ngày đọc **log Postgres** (ghi mọi `ERROR` + câu lệnh) bằng `--tail` ngắn + in khoảng thời gian đã đọc (đo 01/10 ở Coffeetree: `--since` trả rỗng, đọc dài nhảy về khoảng cũ — log json-file hỏng sau lần máy tắt đột ngột);
+> ③ lùi bằng "xoá dòng tag" ⇒ **luôn `sed` về đúng tag pha 1 đã ghi sổ** (bất biến `sha-…`), không bao giờ xoá dòng; khối lùi riêng pha 2 ĐỔI TAG TRƯỚC rồi mới khôi phục + `up`.
+> Vừa: `--expect-fingerprint` **bắt buộc** và chạy lại **trong cửa sổ** ngay sau `stop backend` · kiểm đĩa trước cửa sổ.
 
 Pha 2 gắn `shop_id` vào mọi bảng nghiệp vụ. Nó gồm **năm** migration một chiều, chạy tay **đúng thứ tự** trong **một** cửa sổ:
 
@@ -743,7 +743,7 @@ grep '^BACKEND_IMAGE_TAG=' .env    # tag pha 1 đang chạy → sổ (đường 
 
 **Qua** khi `pull` xong và digest đã ghi. **Không** sửa `.env`, **không** `up`: quán vẫn bán trên ảnh pha 1.
 
-**2. Vài ngày trước cửa sổ — kiểm trước-khi-bay, chỉ đọc.** Lệnh chạy được cả lúc quán đang bán. Ảnh pha 2 chạy trong một container dùng-một-lần; container backend đang bán không đổi:
+**2. Trước cửa sổ (sớm nhất có thể, ít nhất vài giờ) — kiểm trước-khi-bay, chỉ đọc. `--expect-fingerprint` BẮT BUỘC** (không truyền ⇒ không coi là qua). Lệnh chạy được cả lúc quán đang bán. Ảnh pha 2 chạy trong một container dùng-một-lần; container backend đang bán không đổi:
 
 ```bash
 BACKEND_IMAGE_TAG=sha-<p2> docker compose run --rm --no-deps backend \
@@ -784,7 +784,11 @@ docker compose exec -T postgres psql -U trcf trcf_erp -c \
 ```bash
 tmux new -s phase2
 cd ~/fnberp
+df -h / | tail -1                     # còn ≥ 10 × kích thước DB (5 dump + ALTER viết lại bảng)
 docker compose stop backend
+# a0. Kiểm trước-khi-bay LẠI, trên DB đã đứng yên — fingerprint của diễn tập (BẮT BUỘC):
+BACKEND_IMAGE_TAG=sha-<p2> docker compose run --rm --no-deps backend \
+  node dist/phase2-preflight --expect-fingerprint <hash của diễn tập>     # phải 6/6 PASS; FAIL ⇒ up -d backend, dừng
 # a. Đổi ảnh backend sang pha 2 — CHỈ lúc này. Quán đã có dòng BACKEND_IMAGE_TAG:
 sed -i 's/^BACKEND_IMAGE_TAG=.*/BACKEND_IMAGE_TAG=sha-<p2>/' .env
 #    quán chưa có dòng đó (đang chạy IMAGE_TAG/latest):
@@ -795,6 +799,9 @@ docker compose run --rm --no-deps backend node dist/baseline-report \
   --until <YYYY-MM-DD> --out /backups/phase2-before-<ngày>.json
 # c. Năm lượt runner, TỪNG lệnh một — chỉ sang lệnh sau khi lệnh trước in ✅
 docker compose run --rm --no-deps backend node dist/oneway-migrate BigintLargeTables1783741100000
+#    c1. GIỮ dump BIG ngoài vòng xoay — <ts> lấy từ dòng `Đã sao lưu và kiểm đọc lại được` của lượt BIG:
+docker compose run --rm --no-deps --entrypoint sh backend -c \
+  'cp -p /backups/trcf_erp-<ts>.dump /backups/giu-pha2-BIG-<ts>.dump && ls -l /backups/giu-pha2-BIG-<ts>.dump'
 docker compose run --rm --no-deps backend node dist/oneway-migrate AddShopIdColumns1783741200000
 docker compose run --rm --no-deps backend node dist/oneway-migrate CompositeKeys1783741400000
 docker compose run --rm --no-deps backend node dist/oneway-migrate ExternalRefsAndZaloAppShops1783741500000
@@ -839,12 +846,30 @@ Tiêu chí từng lệnh:
 **Đường lùi** — ghi sự cố (mục 5) trong mọi trường hợp:
 
 - **Lượt runner thứ k thoát 1** ⇒ lô của lượt đó đã rollback, schema dừng ở sau lượt k−1. Lỗi `lock timeout` ⇒ tìm phiên giữ khoá (mục Đứt giữa chừng, bước a), rồi chạy lại **đúng lệnh đó**. Lỗi khác:
-  - **k = 1** (BIG): chưa gì đổi. Trả `BACKEND_IMAGE_TAG` về tag pha 1 đã ghi ở bước 1 (sửa lại dòng bằng `sed`, hoặc xoá dòng nếu trước đó không có), rồi `docker compose up -d backend`.
+  - **k = 1** (BIG): chưa gì đổi. Trả `BACKEND_IMAGE_TAG` về tag pha 1 đã ghi ở bước 1 bằng `sed` (quán trước đó không có dòng ⇒ **ghi dòng với tag ảnh đang chạy trước cửa sổ**, KHÔNG xoá dòng: xoá dòng là về `latest` + `pull_policy: always` — có thể kéo đúng ảnh pha 2), rồi `docker compose up -d backend`.
   - **k ≥ 2**: ảnh pha 1 không được chạy trên schema đã có `shop_id`: bảng cửa ngõ là `NOT NULL` không default, mã cũ ghi mà không nêu `shop_id` sẽ chết `23502`. Ảnh pha 2 cũng không boot được khi ER còn chờ. ⇒ [quay về dump](#đứt-giữa-chừng--mất-điện-đứt-ssh-tiến-trình-bị-giết) **đúng tệp của lượt BIG**, trả `BACKEND_IMAGE_TAG` về tag pha 1, rồi `up -d backend`.
 - **Cửa (d) thoát 1** ⇒ **KHÔNG** `up -d backend`. Quay về dump của lượt BIG + trả tag pha 1 + `up -d backend`.
   - `--down TenantScopedUniques1783741600000` chỉ đảo được mỗi TU. Chỉ dùng khi FAIL duy nhất là `tenant-uniques` và cần soi thêm trước khi quyết. Còn FAIL khác thì vẫn phải về dump.
   - Riêng Coffeetree: `baseline-reference` FAIL với chi tiết `đã lệch từ --before`, trong khi `baseline-before-after` PASS ⇒ migration không đổi số, mà doanh thu 29/08–27/09 đã đổi **trước** cửa sổ. Vẫn là FAIL: báo người phụ trách, người đó quyết trong trần 30 phút và ghi sổ. Không quyết kịp ⇒ về dump.
 - **Sau `up -d backend`** (đơn thử hỏng, hoặc sự cố trong ngày theo dõi) ⇒ quay về dump của lượt BIG + trả tag pha 1. **Mọi đơn bán sau giờ chụp dump sẽ mất** — cân nhắc với chủ quán trước khi làm.
+
+**Khối lùi pha 2 — ĐÚNG THỨ TỰ** (đổi tag TRƯỚC: `up` bằng ảnh pha 2 trên schema pha 1 là E-18, `up` bằng ảnh pha 1 trên schema pha 2 là `23502`):
+
+```bash
+cd ~/fnberp
+docker compose stop backend
+sed -i 's/^BACKEND_IMAGE_TAG=.*/BACKEND_IMAGE_TAG=<tag pha 1 trong sổ>/' .env    # Coffeetree: sha-d47c8f6
+docker compose config --images                                                   # backend …:<tag pha 1>
+docker compose cp backend:/backups/giu-pha2-BIG-<ts>.dump ./restore.dump          # bản giữ, không phải trcf_erp-*.dump
+docker compose cp ./restore.dump postgres:/tmp/restore.dump
+docker compose exec -T postgres dropdb -U trcf --force trcf_erp
+docker compose exec -T postgres createdb -U trcf trcf_erp
+docker compose exec -T postgres pg_restore -U trcf --no-owner --no-privileges --exit-on-error -d trcf_erp /tmp/restore.dump
+docker compose run --rm --no-deps backend node dist/phase1-gate --before /backups/phase2-before-<ngày>.json   # schema = sau pha 1
+docker compose up -d backend
+```
+
+Mất tệp trong volume ⇒ bản R2 `<prefix>trcf_erp-<ts>.dump` (cùng `<ts>`).
 
 **4. Ghi sổ** — mỗi ô của quán trong `specs/055-saas/trien-khai-pha-2.md`:
 
@@ -865,18 +890,21 @@ Dán nguyên dòng in ra — không điền số ước.
 
 ```bash
 docker compose run --rm --no-deps backend node dist/phase2-gate --schema-only
-docker compose logs --since 24h backend | grep -E '2350[235]'
+# Log Postgres — KHÔNG dùng --since (đo 01/10: trả rỗng); --tail ngắn + in khoảng đã đọc:
+docker compose logs --no-log-prefix --timestamps --tail 500 postgres > /tmp/pg.log
+echo "đã đọc: $(head -1 /tmp/pg.log | cut -c1-19) → $(tail -1 /tmp/pg.log | cut -c1-19)"   # phải phủ 24h qua; thiếu ⇒ tăng --tail
+grep -E 'ERROR: .*(violates|null value in column)' /tmp/pg.log
 ```
 
 - Lệnh đầu **qua** khi thoát 0 và dòng cuối là `✅ Schema pha 2 (chỉ schema — không phải cửa): 9/9 PASS`. Nó không so báo cáo, nên chạy được lúc đang bán.
-- Lệnh sau phải **không** in dòng nào: `23502` là thiếu `shop_id`, `23503` là khoá ngoại kép chặn, `23505` là trùng unique. `--since 24h` chỉ đọc log của 24 giờ qua — sự cố hôm trước đã ghi sổ không làm đỏ mãi các ngày sau.
+- Khối sau: dòng `đã đọc` phải phủ 24 giờ qua, và `grep` phải **không** in dòng nào trong 24 giờ đó: `null value in column "shop_id"` (23502), `violates foreign key constraint` (23503 — khoá ngoại kép), `violates unique constraint` (23505). Postgres in kèm `STATEMENT:` ngay dòng sau ⇒ biết đường ghi nào. Mức nền đo 01/10 ở Coffeetree (pha 1): 0 dòng `ERROR` của app.
 - Chủ quán đổi Mini App Zalo (ô `zalo.app_id`) sau pha 2: bảng ánh xạ chưa tự theo ô cấu hình tới 554 (DW-100), nên `--schema-only` cố ý **không** đối chiếu hai thứ này — kiểm hằng ngày vẫn `9/9`, KHÔNG phải sự cố, không đếm lại. Chưa đường chạy nào của app đọc bảng ánh xạ (554 mới dùng và đồng bộ), nên lệch lúc này không ảnh hưởng bán hàng.
 
 **Sự cố pha 2** là một trong các việc sau:
 
 - cửa (d) thoát 1, hoặc phải quay về dump / `--down`;
 - `--schema-only` thoát 1 ở bất kỳ ngày nào;
-- log backend có `23502`, `23503` hoặc `23505` ở một đường ghi bình thường (bán, nhập, ca, chấm công, in, đơn Zalo, MoMo);
+- log Postgres có vi phạm `shop_id`/khoá ngoại kép/unique theo quán ở một đường ghi bình thường (bán, nhập, ca, chấm công, in, đơn Zalo, MoMo);
 - một màn báo lỗi 5xx khi ghi, hoặc backend không khởi động;
 - mã gửi ra ngoài sai: MoMo, hoá đơn điện tử hoặc Zalo Checkout báo không tìm thấy giao dịch, hoặc tiền về không khớp đơn;
 - số liệu ngày/ca/kho/điểm lệch giữa các màn, hoặc chủ quán báo két không khớp mà nguyên nhân là dữ liệu sau pha 2.
