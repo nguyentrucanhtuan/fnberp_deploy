@@ -212,7 +212,7 @@ DB_PASSWORD=$(openssl rand -hex 24)
 
 # ── Khoá bí mật (sinh ngẫu nhiên, mỗi máy một giá trị) ──
 JWT_SECRET=$(openssl rand -hex 32)
-JWT_EXPIRES=8h
+JWT_EXPIRES=7d
 AUTH_SECRET=$(openssl rand -hex 32)
 
 # ── Tài khoản quản trị đầu tiên ──
