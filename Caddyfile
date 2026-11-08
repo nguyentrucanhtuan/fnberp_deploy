@@ -135,6 +135,16 @@
 		reverse_proxy backend:3333
 	}
 
+	# ── Giao diện MỚI (058) ở /app → service frontend_app (profile `app`) ──
+	#
+	# Khai CẢ `/app` trần lẫn `/app/*` (matcher `path` so nguyên chuỗi). Khối này PHẢI nằm trước
+	# `handle` vét về frontend cũ. Quán chưa bật profile `app` thì chỉ `/app*` trả 502, mọi đường
+	# khác không ảnh hưởng (Caddy tìm upstream lúc có request, không lúc khởi động).
+	@app path /app /app/*
+	handle @app {
+		reverse_proxy frontend_app:3000
+	}
+
 	# Toàn bộ giao diện + BFF proxy /api (đã gắn Bearer, RBAC ở backend)
 	handle {
 		reverse_proxy frontend:3000
