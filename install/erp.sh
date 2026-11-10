@@ -29,6 +29,8 @@
 #   --admin-password 'xxx'    mật khẩu quản trị (mặc định theo quy ước nhà cung cấp)
 #   --http-port 8080          đổi cổng HTTP nếu 80 đã bị chiếm
 #   --tag v1.2.3              cài đúng phiên bản ảnh (mặc định latest)
+#   --app-tag sha-a1b2c3d     phiên bản ảnh giao diện MỚI — BẮT BUỘC khi cài mới (ảnh này không có
+#                             `latest`); giao diện mới là trang chủ, giao diện cũ ở /v1
 #   --update                  chỉ cập nhật bản mới, giữ nguyên .env + dữ liệu
 #
 # Ví dụ có domain:
@@ -50,6 +52,7 @@ ADMIN_PASSWORD=""
 HTTP_PORT="80"
 HTTPS_PORT="443"
 IMAGE_TAG="latest"
+APP_IMAGE_TAG=""
 UPDATE_ONLY="no"
 # Token có thể truyền qua biến môi trường (không lọt vào lịch sử lệnh / danh sách tiến trình).
 GHCR_TOKEN="${GHCR_TOKEN:-}"
@@ -66,6 +69,7 @@ while [ $# -gt 0 ]; do
     --http-port)      HTTP_PORT="${2:-}"; shift 2 ;;
     --https-port)     HTTPS_PORT="${2:-}"; shift 2 ;;
     --tag)            IMAGE_TAG="${2:-}"; shift 2 ;;
+    --app-tag)        APP_IMAGE_TAG="${2:-}"; shift 2 ;;
     --update)         UPDATE_ONLY="yes"; shift ;;
     -h|--help)        sed -n '2,30p' "$0" 2>/dev/null || true; exit 0 ;;
     *) printf 'Tham số lạ: %s\n' "$1" >&2; exit 1 ;;
@@ -204,6 +208,8 @@ UPLOADS_BASE_URL=
 
 # ── Phiên bản ảnh ──
 IMAGE_TAG=$IMAGE_TAG
+# Giao diện MỚI (trang chủ) — ghim sha, không có latest.
+APP_IMAGE_TAG=$APP_IMAGE_TAG
 
 # ── Database (Postgres chạy trong Docker, dữ liệu ở volume pgdata) ──
 DB_USER=trcf
@@ -261,6 +267,18 @@ if [ "$IMAGE_TAG" != "latest" ] || [ "$UPDATE_ONLY" = "yes" ]; then
     echo "IMAGE_TAG=$IMAGE_TAG" >> .env
   fi
 fi
+
+# Giao diện MỚI là trang chủ từ delta 058 doi-goc-app-v1 → ảnh của nó bắt buộc, mà ảnh này KHÔNG có
+# tag `latest` (chủ ý). Thiếu thì compose kéo `chua-dat-APP_IMAGE_TAG` và hỏng giữa chừng — chặn ở đây.
+if [ -n "$APP_IMAGE_TAG" ]; then
+  if grep -qE '^APP_IMAGE_TAG=' .env; then
+    sed -i "s|^APP_IMAGE_TAG=.*|APP_IMAGE_TAG=$APP_IMAGE_TAG|" .env
+  else
+    echo "APP_IMAGE_TAG=$APP_IMAGE_TAG" >> .env
+  fi
+fi
+grep -qE '^APP_IMAGE_TAG=.+' .env \
+  || die "Thiếu phiên bản giao diện mới. Chạy lại kèm --app-tag sha-<commit> (hỏi nhà cung cấp)."
 
 # ── 4. Mở cổng tường lửa (nếu ufw đang bật) ────────────────────────────────
 if command -v ufw >/dev/null 2>&1 && $SUDO ufw status 2>/dev/null | grep -q 'Status: active'; then

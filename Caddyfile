@@ -8,7 +8,8 @@
 #   • /uploads/*     → backend  (ảnh sản phẩm, đọc công khai)
 #   • /payment-methods/momo/ipn → backend (MoMo gọi ngược báo khách đã trả — 006)
 #   • /zalo-checkout/*  → backend  (Zalo gọi ngược khi khách trả/đặt COD — 054)
-#   • còn lại        → frontend (Next.js; API quản trị đi qua BFF /api có RBAC)
+#   • /v1, /v1/*     → frontend      (giao diện CŨ, BFF /v1/api — delta 058 doi-goc-app-v1)
+#   • còn lại        → frontend_app  (giao diện MỚI; API quản trị đi qua BFF /api có RBAC)
 #
 # Nhờ gộp một origin, trình duyệt trên tablet/điện thoại trong LAN chỉ cần biết
 # ĐÚNG MỘT địa chỉ — không phải cấu hình IP backend riêng, không dính CORS.
@@ -135,19 +136,25 @@
 		reverse_proxy backend:3333
 	}
 
-	# ── Giao diện MỚI (058) ở /app → service frontend_app (profile `app`) ──
+	# ── Giao diện CŨ ở /v1 → service frontend (delta 058 `doi-goc-app-v1`, 10/11/2026) ──
 	#
-	# Khai CẢ `/app` trần lẫn `/app/*` (matcher `path` so nguyên chuỗi). Khối này PHẢI nằm trước
-	# `handle` vét về frontend cũ. Quán chưa bật profile `app` thì chỉ `/app*` trả 502, mọi đường
-	# khác không ảnh hưởng (Caddy tìm upstream lúc có request, không lúc khởi động).
-	@app path /app /app/*
-	handle @app {
-		reverse_proxy frontend_app:3000
+	# Từ delta này bản MỚI (frontend_app) là giao diện chính ở gốc tên miền; bản cũ lùi xuống
+	# `/v1` (ảnh bản cũ build với `basePath: "/v1"`, BFF của nó là `/v1/api/*`). Khai CẢ `/v1`
+	# trần lẫn `/v1/*` (matcher `path` so nguyên chuỗi). Khối này PHẢI nằm trước `handle` vét.
+	#
+	# ⚠️ Tệp này đi CẶP với ảnh: Caddyfile mới + ảnh frontend cũ (chưa có `/v1`) = mọi trang
+	# bản cũ 404; Caddyfile cũ + ảnh mới = gốc tên miền ra bản cũ đã không còn ở `/`. Nâng quán
+	# là đổi CẢ BA (tệp này, `IMAGE_TAG`, `APP_IMAGE_TAG`) trong cùng một lượt.
+	#
+	# `/app` cũ KHÔNG chuyển hướng (TUẤN chốt) — rơi xuống khối vét, bản mới trả 404.
+	@v1 path /v1 /v1/*
+	handle @v1 {
+		reverse_proxy frontend:3000
 	}
 
-	# Toàn bộ giao diện + BFF proxy /api (đã gắn Bearer, RBAC ở backend)
+	# Còn lại: giao diện MỚI + BFF proxy /api của nó (đã gắn Bearer, RBAC ở backend)
 	handle {
-		reverse_proxy frontend:3000
+		reverse_proxy frontend_app:3000
 	}
 
 	# Log gọn, giữ 3 file × 10MB

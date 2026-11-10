@@ -105,7 +105,7 @@ Không cần làm gì trên GitHub — package mặc định private. **Đừng*
 | Package | Nguồn |
 |---|---|
 | `trcf-erp-backend` | repo `trcf_erp_backend`, push `main` |
-| `trcf-erp-frontend` | repo `trcf_erp_frontend`, push `main` |
+| `trcf-erp-frontend` | repo `trcf_erp_frontend_v1`, push `main` |
 | **`trcf-bridge`** | repo `trcf_bridge`, push `main` (thêm 2026-08) |
 
 **Vì sao chương trình in cũng đi qua GHCR:** repo agent private và `dist/` bị gitignore, nên quán

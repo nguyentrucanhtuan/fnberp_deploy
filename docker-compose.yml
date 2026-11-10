@@ -18,6 +18,8 @@ services:
     depends_on:
       frontend:
         condition: service_healthy
+      frontend_app:
+        condition: service_healthy
     ports:
       - "${HTTP_PORT:-80}:80"
       - "${HTTPS_PORT:-443}:443"
@@ -158,7 +160,7 @@ services:
       retries: 5
       start_period: 60s
 
-  # ── Giao diện Next.js (BFF /api gắn Bearer, token httpOnly) ──
+  # ── Giao diện CŨ, phục vụ ở /v1 (BFF /v1/api gắn Bearer, token httpOnly) ──
   frontend:
     image: ghcr.io/nguyentrucanhtuan/trcf-erp-frontend:${IMAGE_TAG:-latest}
     pull_policy: always
@@ -173,18 +175,19 @@ services:
       # Bắt buộc khi chạy sau reverse-proxy để NextAuth tin host thật.
       AUTH_TRUST_HOST: "true"
     healthcheck:
-      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:3000/',r=>process.exit(0)).on('error',()=>process.exit(1))"]
+      # Bản cũ ở `/v1` (delta 058 doi-goc-app-v1) — `/` của service này nay là 404.
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:3000/v1',r=>process.exit(r.statusCode<500?0:1)).on('error',()=>process.exit(1))"]
       interval: 30s
       timeout: 5s
       retries: 5
       start_period: 20s
 
-  # ── Giao diện MỚI mobile-first (058), phục vụ ở /app — chạy SONG SONG bản cũ ──
-  # Mặc định TẮT (profile `app`): quán nào muốn bật thì đặt `COMPOSE_PROFILES=app` và
-  # `APP_IMAGE_TAG=sha-<commit>` trong `.env` (quên đặt ⇒ kéo ảnh `chua-dat-APP_IMAGE_TAG` và lỗi rõ ràng, không kéo nhầm bản). Ảnh này KHÔNG có tag `latest` (chủ ý — quán ghim
-  # sha để biết đúng mã nào đang chạy). Bản cũ, backend, DB không đổi.
+  # ── Giao diện MỚI mobile-first (058) — GIAO DIỆN CHÍNH ở gốc tên miền ──
+  # Từ delta 058 `doi-goc-app-v1` (10/11/2026) KHÔNG còn là profile tuỳ chọn: thiếu service này
+  # là quán mất trang chủ. Bắt buộc `APP_IMAGE_TAG=sha-<commit>` trong `.env` (quên đặt ⇒ kéo ảnh
+  # `chua-dat-APP_IMAGE_TAG` và lỗi rõ ràng, không kéo nhầm bản). Ảnh này KHÔNG có tag `latest`
+  # (chủ ý — quán ghim sha để biết đúng mã nào đang chạy). Ảnh phải từ commit có `BASE_PATH = ""`.
   frontend_app:
-    profiles: ["app"]
     image: ghcr.io/nguyentrucanhtuan/trcf-erp-frontend-app:${APP_IMAGE_TAG:-chua-dat-APP_IMAGE_TAG}
     pull_policy: always
     restart: unless-stopped
@@ -197,7 +200,7 @@ services:
       AUTH_SECRET: ${AUTH_SECRET:?AUTH_SECRET bắt buộc — openssl rand -hex 32}
       AUTH_TRUST_HOST: "true"
     healthcheck:
-      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:3000/app',r=>process.exit(r.statusCode<500?0:1)).on('error',()=>process.exit(1))"]
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:3000/',r=>process.exit(r.statusCode<500?0:1)).on('error',()=>process.exit(1))"]
       interval: 30s
       timeout: 5s
       retries: 5
