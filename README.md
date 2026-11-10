@@ -401,6 +401,16 @@ Từ bản này **giao diện mới là trang chủ**, giao diện cũ lùi xu�
 
 Caddyfile mới + ảnh cũ = mọi trang `/v1` 404; Caddyfile cũ + ảnh mới = trang chủ ra giao diện cũ đã không còn ở `/`. Lùi: trả cả ba về bản trước.
 
+⚠️ **Tên ảnh đổi 11/11/2026** — kiểm sha nào thuộc ảnh nào TRƯỚC khi sửa `.env`:
+
+| Biến `.env` | Ảnh | Là |
+|---|---|---|
+| `APP_IMAGE_TAG` | `trcf-erp-frontend` | giao diện CHÍNH (`/`) — trước 11/11 tên `trcf-erp-frontend-app` |
+| `IMAGE_TAG` | `trcf-erp-frontend-v1` | giao diện CŨ (`/v1`) — trước 11/11 tên `trcf-erp-frontend` |
+| `BACKEND_IMAGE_TAG` | `trcf-erp-backend` | backend (không đổi) |
+
+Bẫy: package `trcf-erp-frontend` chứa CẢ sha cũ của giao diện cũ (trước 11/11) LẪN sha mới của giao diện chính, và `latest` đóng băng của nó vẫn là giao diện cũ. Quán chưa nâng (compose cũ, `trcf-erp-frontend:latest`) không bị ảnh hưởng. Khi nâng quán sang compose này, lấy sha giao diện chính từ repo `trcf_erp_frontend`, sha giao diện cũ từ repo `trcf_erp_frontend_v1`. Kiểm trước khi `up`: `docker compose config | grep image:`.
+
 Sau khi nâng:
 - Ai đang dùng giao diện mới phải **đăng nhập lại một lần** (phiên cũ gắn với `/app`). Phiên giao diện cũ giữ nguyên.
 - **Màn bếp / màn khách / màn tổng hợp treo tường** tự sang màn giao diện mới và hiện trang đăng nhập → **đăng nhập lại trên từng thiết bị**.

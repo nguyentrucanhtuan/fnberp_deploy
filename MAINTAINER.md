@@ -98,14 +98,16 @@ Thêm route public mới cho backend → bổ sung vào matcher `@backend`.
 
 ## 2. Việc phải làm MỘT LẦN
 
-### 2.1 Giữ 3 package GHCR ở chế độ **private** (quyết định đã chốt)
+### 2.1 Giữ các package GHCR ở chế độ **private** (quyết định đã chốt)
 
 Không cần làm gì trên GitHub — package mặc định private. **Đừng** chuyển sang public.
 
 | Package | Nguồn |
 |---|---|
 | `trcf-erp-backend` | repo `trcf_erp_backend`, push `main` |
-| `trcf-erp-frontend` | repo `trcf_erp_frontend_v1`, push `main` |
+| `trcf-erp-frontend` | repo `trcf_erp_frontend` (giao diện CHÍNH), push `main` — **từ 11/11/2026**. Trước đó là giao diện cũ: `latest` đóng băng + sha cũ trong package vẫn là giao diện cũ. Package gắn repo `trcf_erp_frontend_v1` ⇒ phải cấp Actions access (Write) cho repo `trcf_erp_frontend` |
+| `trcf-erp-frontend-v1` | repo `trcf_erp_frontend_v1` (giao diện CŨ, `/v1`), push `main` — từ 11/11/2026 |
+| ~~`trcf-erp-frontend-app`~~ | ngừng đẩy từ 11/11/2026 (đổi thành `trcf-erp-frontend`); sha cũ còn kéo được |
 | **`trcf-bridge`** | repo `trcf_bridge`, push `main` (thêm 2026-08) |
 
 **Vì sao chương trình in cũng đi qua GHCR:** repo agent private và `dist/` bị gitignore, nên quán
