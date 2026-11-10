@@ -391,6 +391,22 @@ theo ngày lệch 7 giờ mà **không báo lỗi gì**.
 
 ## 7. Cập nhật phiên bản mới
 
+### Đổi gốc: giao diện mới ở `/`, giao diện cũ ở `/v1` (delta 058 `doi-goc-app-v1`)
+
+Từ bản này **giao diện mới là trang chủ**, giao diện cũ lùi xuống `http://<quán>/v1`. Ba thứ đi **cùng một lượt** — thiếu một là hỏng:
+
+1. `Caddyfile` + `docker-compose.yml` mới (tệp này của repo).
+2. `IMAGE_TAG` = ảnh frontend cũ build có `/v1`.
+3. `APP_IMAGE_TAG` = ảnh giao diện mới build ở gốc (bắt buộc, không còn `COMPOSE_PROFILES=app`).
+
+Caddyfile mới + ảnh cũ = mọi trang `/v1` 404; Caddyfile cũ + ảnh mới = trang chủ ra giao diện cũ đã không còn ở `/`. Lùi: trả cả ba về bản trước.
+
+Sau khi nâng:
+- Ai đang dùng giao diện mới phải **đăng nhập lại một lần** (phiên cũ gắn với `/app`). Phiên giao diện cũ giữ nguyên.
+- **Màn bếp / màn khách / màn tổng hợp treo tường** tự sang màn giao diện mới và hiện trang đăng nhập → **đăng nhập lại trên từng thiết bị**.
+- Đường `/app/…` cũ **không** chuyển hướng: icon Màn hình chính / bookmark trỏ `/app` phải tạo lại.
+- Kiểm: `curl -s -o /dev/null -w '%{http_code}' http://<quán>/v1/sign-in` ra `200`; `/` chưa đăng nhập ra `307` về `/sign-in`.
+
 ```bash
 cd ~/fnberp && docker compose pull && docker compose up -d
 ```
