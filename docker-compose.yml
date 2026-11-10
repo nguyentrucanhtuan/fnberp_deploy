@@ -161,8 +161,12 @@ services:
       start_period: 60s
 
   # ── Giao diện CŨ, phục vụ ở /v1 (BFF /v1/api gắn Bearer, token httpOnly) ──
+  # ⚠️ ĐỔI TÊN ẢNH 11/11/2026: giao diện CŨ nay là `trcf-erp-frontend-v1` (repo trcf_erp_frontend_v1).
+  # Tên `trcf-erp-frontend` từ đó là giao diện CHÍNH (service frontend_app dưới) — `latest` đóng băng
+  # trong package đó vẫn là giao diện cũ cho quán chưa nâng, nhưng tệp này KHÔNG dùng nó nữa.
+  # Không có `latest` ⇒ quên ghim `IMAGE_TAG` là lỗi rõ ràng, không kéo nhầm bản.
   frontend:
-    image: ghcr.io/nguyentrucanhtuan/trcf-erp-frontend:${IMAGE_TAG:-latest}
+    image: ghcr.io/nguyentrucanhtuan/trcf-erp-frontend-v1:${IMAGE_TAG:-chua-dat-IMAGE_TAG}
     pull_policy: always
     restart: unless-stopped
     depends_on:
@@ -187,8 +191,9 @@ services:
   # là quán mất trang chủ. Bắt buộc `APP_IMAGE_TAG=sha-<commit>` trong `.env` (quên đặt ⇒ kéo ảnh
   # `chua-dat-APP_IMAGE_TAG` và lỗi rõ ràng, không kéo nhầm bản). Ảnh này KHÔNG có tag `latest`
   # (chủ ý — quán ghim sha để biết đúng mã nào đang chạy). Ảnh phải từ commit có `BASE_PATH = ""`.
+  # Ảnh `trcf-erp-frontend` (đổi tên 11/11/2026, trước là `trcf-erp-frontend-app`) — CHỈ có tag `sha-…`.
   frontend_app:
-    image: ghcr.io/nguyentrucanhtuan/trcf-erp-frontend-app:${APP_IMAGE_TAG:-chua-dat-APP_IMAGE_TAG}
+    image: ghcr.io/nguyentrucanhtuan/trcf-erp-frontend:${APP_IMAGE_TAG:-chua-dat-APP_IMAGE_TAG}
     pull_policy: always
     restart: unless-stopped
     depends_on:

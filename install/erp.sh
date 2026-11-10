@@ -28,9 +28,12 @@
 #   --admin-email a@b.vn      email quản trị (mặc định admin@trcf.vn)
 #   --admin-password 'xxx'    mật khẩu quản trị (mặc định theo quy ước nhà cung cấp)
 #   --http-port 8080          đổi cổng HTTP nếu 80 đã bị chiếm
-#   --tag v1.2.3              cài đúng phiên bản ảnh (mặc định latest)
-#   --app-tag sha-a1b2c3d     phiên bản ảnh giao diện MỚI — BẮT BUỘC khi cài mới (ảnh này không có
-#                             `latest`); giao diện mới là trang chủ, giao diện cũ ở /v1
+#   --app-tag sha-a1b2c3d     ảnh giao diện CHÍNH `trcf-erp-frontend` (trang chủ /)   — bắt buộc khi cài mới
+#   --tag sha-a1b2c3d         ảnh giao diện CŨ `trcf-erp-frontend-v1` (ở /v1)       — bắt buộc khi cài mới
+#   --backend-tag sha-a1b2c3d ảnh backend `trcf-erp-backend`                        — bắt buộc khi cài mới
+#                             (từ 11/11/2026 không ảnh nào cài mới được bằng `latest`: hai ảnh giao diện
+#                             không có `latest`, `latest` backend đóng băng từ 04/10). --update chỉ đổi
+#                             tag nào được truyền; không truyền thì giữ nguyên tag đang chạy.
 #   --update                  chỉ cập nhật bản mới, giữ nguyên .env + dữ liệu
 #
 # Ví dụ có domain:
@@ -51,8 +54,9 @@ ADMIN_PASSWORD_DEFAULT='1234567890@'
 ADMIN_PASSWORD=""
 HTTP_PORT="80"
 HTTPS_PORT="443"
-IMAGE_TAG="latest"
+IMAGE_TAG=""
 APP_IMAGE_TAG=""
+BACKEND_IMAGE_TAG=""
 UPDATE_ONLY="no"
 # Token có thể truyền qua biến môi trường (không lọt vào lịch sử lệnh / danh sách tiến trình).
 GHCR_TOKEN="${GHCR_TOKEN:-}"
@@ -70,6 +74,7 @@ while [ $# -gt 0 ]; do
     --https-port)     HTTPS_PORT="${2:-}"; shift 2 ;;
     --tag)            IMAGE_TAG="${2:-}"; shift 2 ;;
     --app-tag)        APP_IMAGE_TAG="${2:-}"; shift 2 ;;
+    --backend-tag)    BACKEND_IMAGE_TAG="${2:-}"; shift 2 ;;
     --update)         UPDATE_ONLY="yes"; shift ;;
     -h|--help)        sed -n '2,30p' "$0" 2>/dev/null || true; exit 0 ;;
     *) printf 'Tham số lạ: %s\n' "$1" >&2; exit 1 ;;
@@ -207,9 +212,12 @@ APP_URL=$PUBLIC_URL
 UPLOADS_BASE_URL=
 
 # ── Phiên bản ảnh ──
+# Giao diện CŨ (/v1) — ảnh trcf-erp-frontend-v1, ghim sha (không có latest).
 IMAGE_TAG=$IMAGE_TAG
-# Giao diện MỚI (trang chủ) — ghim sha, không có latest.
+# Giao diện CHÍNH (/) — ảnh trcf-erp-frontend, ghim sha (không có latest).
 APP_IMAGE_TAG=$APP_IMAGE_TAG
+# Backend — ảnh trcf-erp-backend, ghim sha.
+BACKEND_IMAGE_TAG=$BACKEND_IMAGE_TAG
 
 # ── Database (Postgres chạy trong Docker, dữ liệu ở volume pgdata) ──
 DB_USER=trcf
@@ -259,26 +267,24 @@ EOF
   ok "Đã sinh .env (mật khẩu DB + JWT_SECRET + AUTH_SECRET ngẫu nhiên)"
 fi
 
-# Cập nhật tag ảnh khi chạy với --tag / --update
-if [ "$IMAGE_TAG" != "latest" ] || [ "$UPDATE_ONLY" = "yes" ]; then
-  if grep -qE '^IMAGE_TAG=' .env; then
-    sed -i "s|^IMAGE_TAG=.*|IMAGE_TAG=$IMAGE_TAG|" .env
-  else
-    echo "IMAGE_TAG=$IMAGE_TAG" >> .env
-  fi
-fi
+# Ghi tag ảnh nào được truyền (cài mới lẫn --update). KHÔNG tự đặt `latest` nữa: trước 11/11 `--update`
+# ghi đè `IMAGE_TAG=latest` = kéo giao diện cũ đóng băng về quán đã nâng ⇒ hỏng cả quán.
+set_env_tag() {  # $1 = tên biến, $2 = giá trị (rỗng = giữ nguyên)
+  [ -n "$2" ] || return 0
+  if grep -qE "^$1=" .env; then sed -i "s|^$1=.*|$1=$2|" .env; else echo "$1=$2" >> .env; fi
+}
+set_env_tag IMAGE_TAG "$IMAGE_TAG"
+set_env_tag APP_IMAGE_TAG "$APP_IMAGE_TAG"
+set_env_tag BACKEND_IMAGE_TAG "$BACKEND_IMAGE_TAG"
 
-# Giao diện MỚI là trang chủ từ delta 058 doi-goc-app-v1 → ảnh của nó bắt buộc, mà ảnh này KHÔNG có
-# tag `latest` (chủ ý). Thiếu thì compose kéo `chua-dat-APP_IMAGE_TAG` và hỏng giữa chừng — chặn ở đây.
-if [ -n "$APP_IMAGE_TAG" ]; then
-  if grep -qE '^APP_IMAGE_TAG=' .env; then
-    sed -i "s|^APP_IMAGE_TAG=.*|APP_IMAGE_TAG=$APP_IMAGE_TAG|" .env
-  else
-    echo "APP_IMAGE_TAG=$APP_IMAGE_TAG" >> .env
-  fi
-fi
-grep -qE '^APP_IMAGE_TAG=.+' .env \
-  || die "Thiếu phiên bản giao diện mới. Chạy lại kèm --app-tag sha-<commit> (hỏi nhà cung cấp)."
+# Ba ảnh đều phải ghim (đổi tên ảnh 11/11/2026: `trcf-erp-frontend` = giao diện CHÍNH, `-v1` = CŨ).
+# `latest` không dùng được cho ảnh nào ⇒ chặn ở đây thay vì để compose kéo hỏng giữa chừng.
+for v in APP_IMAGE_TAG IMAGE_TAG BACKEND_IMAGE_TAG; do
+  val="$(grep -E "^$v=" .env | tail -1 | cut -d= -f2-)"
+  case "$val" in
+    ""|latest) die "Thiếu tag ảnh $v (đang là '${val:-rỗng}'). Chạy lại kèm --app-tag / --tag / --backend-tag sha-<commit> (hỏi nhà cung cấp)." ;;
+  esac
+done
 
 # ── 4. Mở cổng tường lửa (nếu ufw đang bật) ────────────────────────────────
 if command -v ufw >/dev/null 2>&1 && $SUDO ufw status 2>/dev/null | grep -q 'Status: active'; then
