@@ -29,11 +29,11 @@
 #   --admin-password 'xxx'    mật khẩu quản trị (mặc định theo quy ước nhà cung cấp)
 #   --http-port 8080          đổi cổng HTTP nếu 80 đã bị chiếm
 #   --app-tag sha-a1b2c3d     ảnh giao diện CHÍNH `trcf-erp-frontend` (trang chủ /)   — bắt buộc khi cài mới
-#   --tag sha-a1b2c3d         ảnh giao diện CŨ `trcf-erp-frontend-v1` (ở /v1)       — bắt buộc khi cài mới
 #   --backend-tag sha-a1b2c3d ảnh backend `trcf-erp-backend`                        — bắt buộc khi cài mới
-#                             (từ 11/11/2026 không ảnh nào cài mới được bằng `latest`: hai ảnh giao diện
+#                             (từ 11/11/2026 không ảnh nào cài mới được bằng `latest`: ảnh giao diện
 #                             không có `latest`, `latest` backend đóng băng từ 04/10). --update chỉ đổi
 #                             tag nào được truyền; không truyền thì giữ nguyên tag đang chạy.
+#                             (Giao diện CŨ `/v1` — `--tag`/`IMAGE_TAG` — đã GỠ 12/11/2026.)
 #   --update                  chỉ cập nhật bản mới, giữ nguyên .env + dữ liệu
 #
 # Ví dụ có domain:
@@ -54,7 +54,6 @@ ADMIN_PASSWORD_DEFAULT='1234567890@'
 ADMIN_PASSWORD=""
 HTTP_PORT="80"
 HTTPS_PORT="443"
-IMAGE_TAG=""
 APP_IMAGE_TAG=""
 BACKEND_IMAGE_TAG=""
 UPDATE_ONLY="no"
@@ -72,7 +71,6 @@ while [ $# -gt 0 ]; do
     --admin-password) ADMIN_PASSWORD="${2:-}"; shift 2 ;;
     --http-port)      HTTP_PORT="${2:-}"; shift 2 ;;
     --https-port)     HTTPS_PORT="${2:-}"; shift 2 ;;
-    --tag)            IMAGE_TAG="${2:-}"; shift 2 ;;
     --app-tag)        APP_IMAGE_TAG="${2:-}"; shift 2 ;;
     --backend-tag)    BACKEND_IMAGE_TAG="${2:-}"; shift 2 ;;
     --update)         UPDATE_ONLY="yes"; shift ;;
@@ -212,8 +210,6 @@ APP_URL=$PUBLIC_URL
 UPLOADS_BASE_URL=
 
 # ── Phiên bản ảnh ──
-# Giao diện CŨ (/v1) — ảnh trcf-erp-frontend-v1, ghim sha (không có latest).
-IMAGE_TAG=$IMAGE_TAG
 # Giao diện CHÍNH (/) — ảnh trcf-erp-frontend, ghim sha (không có latest).
 APP_IMAGE_TAG=$APP_IMAGE_TAG
 # Backend — ảnh trcf-erp-backend, ghim sha.
@@ -273,16 +269,15 @@ set_env_tag() {  # $1 = tên biến, $2 = giá trị (rỗng = giữ nguyên)
   [ -n "$2" ] || return 0
   if grep -qE "^$1=" .env; then sed -i "s|^$1=.*|$1=$2|" .env; else echo "$1=$2" >> .env; fi
 }
-set_env_tag IMAGE_TAG "$IMAGE_TAG"
 set_env_tag APP_IMAGE_TAG "$APP_IMAGE_TAG"
 set_env_tag BACKEND_IMAGE_TAG "$BACKEND_IMAGE_TAG"
 
-# Ba ảnh đều phải ghim (đổi tên ảnh 11/11/2026: `trcf-erp-frontend` = giao diện CHÍNH, `-v1` = CŨ).
+# Cả hai ảnh đều phải ghim (đổi tên ảnh 11/11/2026: `trcf-erp-frontend` = giao diện CHÍNH).
 # `latest` không dùng được cho ảnh nào ⇒ chặn ở đây thay vì để compose kéo hỏng giữa chừng.
-for v in APP_IMAGE_TAG IMAGE_TAG BACKEND_IMAGE_TAG; do
+for v in APP_IMAGE_TAG BACKEND_IMAGE_TAG; do
   val="$(grep -E "^$v=" .env | tail -1 | cut -d= -f2-)"
   case "$val" in
-    ""|latest) die "Thiếu tag ảnh $v (đang là '${val:-rỗng}'). Chạy lại kèm --app-tag / --tag / --backend-tag sha-<commit> (hỏi nhà cung cấp)." ;;
+    ""|latest) die "Thiếu tag ảnh $v (đang là '${val:-rỗng}'). Chạy lại kèm --app-tag / --backend-tag sha-<commit> (hỏi nhà cung cấp)." ;;
   esac
 done
 
@@ -342,7 +337,9 @@ fi
 rm -f /tmp/trcf-pull-err
 ok "Đã tải backend + frontend + postgres + caddy"
 
-$DOCKER compose up -d
+# --remove-orphans: quán nâng cấp từ bản còn service `frontend` (v1, gỡ 12/11/2026)
+# thì container cũ đó dừng + xoá luôn, không treo lại chạy vô ích.
+$DOCKER compose up -d --remove-orphans
 ok "Đã khởi động"
 
 # ── 7. Chờ hệ thống sẵn sàng ───────────────────────────────────────────────
@@ -351,7 +348,7 @@ step "Chờ hệ thống sẵn sàng (backend tạo bảng + tài khoản quản
 READY="no"
 for i in $(seq 1 60); do
   if $DOCKER compose ps --format '{{.Service}} {{.Status}}' 2>/dev/null \
-      | grep -q '^frontend .*healthy'; then
+      | grep -q '^frontend_app .*healthy'; then
     READY="yes"; break
   fi
   sleep 5
