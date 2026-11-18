@@ -37,7 +37,7 @@ máy nào sẵn Docker thì bỏ qua bước 1. Muốn một lệnh: dùng `inst
 - Mật khẩu quản trị là mặc định `1234567890@` (quy ước chung với khách), đổi được
   trong mục Tài khoản. Riêng quán cài kèm `--domain` (mở ra internet) thì nên đổi,
   vì mật khẩu mặc định nằm trong `install/ubuntu.sh` của repo công khai.
-- Bật sao lưu tự động (README §7) — làm luôn, đừng để "hôm sau"
+- Bật sao lưu tự động (docs/README-CHI-TIET.md §8) — làm luôn, đừng để "hôm sau"
 - Đưa khách file [README.md](README.md) làm sổ tay vận hành
 
 **⑤ Ghi lại** khách nào dùng token nào (để sau này thu hồi đúng cái cần).
@@ -114,7 +114,7 @@ Không cần làm gì trên GitHub — package mặc định private. **Đừng*
 không có đường nào `curl` binary về. Đẩy ảnh lên GHCR thì họ dùng **đúng token đã cấp lúc cài
 ERP** — không phải phát sinh kênh phân phối thứ hai, không phải cấp thêm quyền. Một ảnh phục vụ
 cả hai kiểu cài: chạy thẳng bằng Docker, hoặc `docker cp` binary ra `/usr/local/bin` rồi chạy
-bằng systemd (README §5 hướng dẫn cả hai). Ảnh dựng **đa kiến trúc** amd64 + arm64.
+bằng systemd (docs/README-CHI-TIET.md §5 hướng dẫn cả hai). Ảnh dựng **đa kiến trúc** amd64 + arm64.
 
 **Lý do:** `dist/` của backend là output `tsc`, **không minify**. Tên hàm, tên biến,
 toàn bộ luồng nghiệp vụ (engine sổ cái tiền, sổ cái kho, RBAC…) đọc được nguyên vẹn

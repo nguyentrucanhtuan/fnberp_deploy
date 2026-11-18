@@ -7,7 +7,7 @@
 # 4 service: caddy (cổng vào) → frontend_app + backend → postgres.
 # (Giao diện CŨ `/v1` — service `frontend` — đã GỠ 12/11/2026: bản chính đã đủ parity, xem NHAT-KY.md.)
 # CHỈ caddy publish cổng ra ngoài; backend/postgres nằm trong mạng nội bộ Docker.
-# Dữ liệu ở volume "pgdata" — NHỚ SAO LƯU (xem README), và ĐỪNG dùng `down -v`.
+# Dữ liệu ở volume "pgdata" — NHỚ SAO LƯU (xem docs/README-CHI-TIET.md §8), và ĐỪNG dùng `down -v`.
 # ─────────────────────────────────────────────────────────────────────────
 name: trcf-erp
 
@@ -92,7 +92,7 @@ services:
       # Muốn dùng DB ngoài (Neon…): thay cả hai dòng dưới bằng chuỗi của bạn (+ ?sslmode=require).
       #
       # 555.1 — TÁCH VAI: `DATABASE_URL` là vai ỨNG DỤNG (chỉ DML, bị RLS lọc theo quán) khi
-      # `.env` có DB_APP_USER/DB_APP_PASSWORD (tạo bằng `node dist/setup-db-roles`, README
+      # `.env` có DB_APP_USER/DB_APP_PASSWORD (tạo bằng `node dist/setup-db-roles`, docs/README-CHI-TIET.md
       # "Tách vai"); chưa đặt ⇒ y như cũ (vai DB_USER). `MIGRATION_DATABASE_URL` LUÔN là vai
       # CHỦ (DB_USER): cổng sao lưu, migration lúc boot, migration một chiều, CLI kiểm.
       DATABASE_URL: postgresql://${DB_APP_USER:-${DB_USER:-trcf}}:${DB_APP_PASSWORD:-${DB_PASSWORD:?DB_PASSWORD bắt buộc}}@postgres:5432/${DB_NAME:-trcf_erp}
@@ -125,7 +125,7 @@ services:
       # `/shop/*`. Quán cài mới nhận sẵn giá trị đúng trong .env; quán cũ giữ
       # nguyên .env khi cập nhật nên phải tự thêm dòng này.
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS-}
-      # Ảnh sản phẩm — ghi vào volume `uploads` (xem mục sao lưu ở README).
+      # Ảnh sản phẩm — ghi vào volume `uploads` (xem docs/README-CHI-TIET.md §8).
       UPLOADS_DIR: /app/uploads
       # Rỗng = URL ảnh TƯƠNG ĐỐI → xem ERP bằng địa chỉ nào (IP LAN · domain ·
       # tunnel · Tailscale) cũng thấy ảnh. Dấu `-` (không phải `:-`) là cố ý:
@@ -135,7 +135,7 @@ services:
       UPLOADS_BASE_URL: ${UPLOADS_BASE_URL-}
       # ── Cổng sao lưu (551.1) ── Có migration chờ ⇒ backend `pg_dump` vào volume
       # `backups`, kiểm đọc lại được rồi MỚI migrate; dump hỏng ⇒ backend dừng,
-      # không migrate. Không có biến nào tắt cổng (xem README §8).
+      # không migrate. Không có biến nào tắt cổng (xem docs/README-CHI-TIET.md §8).
       # Số bản giữ lại (mặc định 5, tối thiểu 1).
       BACKUP_KEEP: ${BACKUP_KEEP:-5}
       # Bản sao thứ hai lên Cloudflare R2 — CỐ-GẮNG-HẾT-SỨC: lỗi mạng/R2 chỉ
@@ -186,9 +186,9 @@ services:
 
 volumes:
   pgdata:
-  # Ảnh sản phẩm. `pg_dump` KHÔNG chứa ảnh — phải sao lưu riêng (xem README).
+  # Ảnh sản phẩm. `pg_dump` KHÔNG chứa ảnh — phải sao lưu riêng (xem docs/README-CHI-TIET.md §8).
   uploads:
-  # Bản dump tự động trước mỗi lần migrate (cổng sao lưu 551.1) — xem README §8.
+  # Bản dump tự động trước mỗi lần migrate (cổng sao lưu 551.1) — xem docs/README-CHI-TIET.md §8.
   backups:
   caddy_data:
   caddy_config:

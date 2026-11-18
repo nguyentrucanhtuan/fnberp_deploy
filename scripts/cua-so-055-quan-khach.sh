@@ -3,7 +3,7 @@
 # CỬA SỔ 055 MỘT LẦN cho QUÁN KHÁCH — pha 1 (timestamptz) → pha 2 (shop_id) → pha 4
 # (RLS + vai app) liền nhau, bằng CHÍNH các CLI trong ảnh mới. Quyết định 03/10 (chủ dự
 # án): SoCoffee rồi Gác Đỏ đi một cửa sổ, Coffeetree đã tiên phong từng pha
-# (specs/055-saas/trien-khai-pha-4.md · README §7).
+# (specs/055-saas/trien-khai-pha-4.md · docs/README-CHI-TIET.md §7).
 #
 #   sudo -E bash cua-so-055-quan-khach.sh             # cửa sổ — trên MÁY QUÁN, ngoài giờ bán
 #   sudo -E bash cua-so-055-quan-khach.sh --lui <TS>  # đường lùi: về đúng trước cửa sổ <TS>

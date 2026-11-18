@@ -10,7 +10,7 @@
 #   ./install.sh --domain erp.quan.vn    # kèm domain + HTTPS
 #   ./install.sh --update                # cập nhật bản mới
 #
-# Mọi tham số được chuyển thẳng sang install/ubuntu.sh (xem README.md §4).
+# Mọi tham số được chuyển thẳng sang install/ubuntu.sh (xem docs/README-CHI-TIET.md §4).
 # ─────────────────────────────────────────────────────────────────────────
 set -euo pipefail
 exec bash "$(cd "$(dirname "$0")" && pwd)/install/ubuntu.sh" "$@"

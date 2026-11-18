@@ -41,7 +41,7 @@ Làm trên máy chủ của quán, trong thư mục cài đặt (`~/fnberp` nế
 | A10 | **Lượt bị chặn có để lại dấu vết** | Ngay sau lượt 403 ở A9: `docker compose exec caddy grep zalo-checkout /data/access.log*` → có dòng với **status 403** và IP của máy vừa gọi. Không có dòng nào = không tra được về sau khi Zalo kêu "gọi không tới". ⚠️ Log **cuốn ở 10 MiB và chỉ giữ 3 tệp** (`roll_size`/`roll_keep`), quán đông thì vài ngày là mất — nên grep **cả tệp đã cuốn** (`/data/access.log*`) và **chép NGAY dòng log khớp vào `DEPLOY-<QUÁN>-<IP>.md` lúc còn nhìn thấy**, đừng hẹn hôm sau. | |
 | A11 | **`ZALO_APP_SECRET` có trong `.env`** | `grep -c '^ZALO_APP_SECRET=.\+' .env` → `1`. Đây là khoá giải mã số điện thoại khách (Zalo Graph); thiếu thì route lấy SĐT trả 503 (fails-closed, không bịa số). Khoá này **chỉ ở biến môi trường**, không có ô trong màn Thiết lập. | |
 | A12 | **`ZALO_CHECKOUT_API_BASE` đúng chế độ đang chạy** | Chạy thử sandbox → điền gốc sandbox; chạy thật → **để TRỐNG** (gọi Zalo thật). Kiểm biến đã tới được container: `docker compose exec backend printenv ZALO_CHECKOUT_API_BASE`. | |
-| A13 | **Sao lưu tự động đang chạy** | README §7. Kênh Zalo ghi thêm đơn và bút toán tiền — mất dữ liệu ở đây là mất tiền đã thu. | |
+| A13 | **Sao lưu tự động đang chạy** | docs/README-CHI-TIET.md §8. Kênh Zalo ghi thêm đơn và bút toán tiền — mất dữ liệu ở đây là mất tiền đã thu. | |
 
 ---
 
