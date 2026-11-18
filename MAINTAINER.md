@@ -17,20 +17,9 @@ phải làm một lần** để lệnh cài một dòng chạy được.
 - Cắm dây/wifi **cùng mạng** với máy thu ngân + tablet bếp
 - Đặt **IP tĩnh** (hoặc DHCP reservation ở router) — nếu không, mai IP đổi là mọi máy mất kết nối
 
-**③ Gửi khách lệnh cài** (đã điền sẵn token) — 2 bước, hoặc gộp làm một:
-```bash
-# Bước 1 — Docker
-curl -fsSL https://raw.githubusercontent.com/nguyentrucanhtuan/fnberp_deploy/main/install/docker.sh | bash
-
-# Bước 2 — ERP
-cd ~ && curl -fsSL https://raw.githubusercontent.com/nguyentrucanhtuan/fnberp_deploy/main/install/erp.sh \
-  | GHCR_TOKEN=ghp_xxxxxxxxxxxx bash
-```
-Chờ 3–5 phút, script tự in ra địa chỉ + tài khoản + mật khẩu.
-
-Tách 2 bước để khi có sự cố biết ngay hỏng ở đâu (cài Docker vs cài ERP), và
-máy nào sẵn Docker thì bỏ qua bước 1. Muốn một lệnh: dùng `install/ubuntu.sh`
-(chỉ là lớp gọi lần lượt 2 script trên).
+**③ Gửi khách lệnh cài** — chép nguyên [README.md](README.md) phần A (Bước 2 + Bước 3), điền
+sẵn token + hai tag `sha-…` mới nhất. Bước 3 gồm `erp.sh` rồi `install/db-moi.sh` (dựng DB trắng —
+bộ cài chưa tự làm được với ảnh sau 055; xoá `db-moi.sh` khỏi README khi đã vá `erp.sh`).
 
 **④ Bàn giao**
 - Chỉ khách mở địa chỉ đó trên máy thu ngân / tablet / điện thoại (cùng wifi)

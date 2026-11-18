@@ -29,102 +29,24 @@ newgrp docker
 
 Máy đã có Docker thì script tự bỏ qua.
 
-### Bước 3 — Khai token và phiên bản
+### Bước 3 — Cài ERP
+
+Thay `<token>` rồi dán cả khối. Chờ 5–10 phút, cuối cùng màn hình in địa chỉ, tài khoản và mật khẩu.
 
 ```bash
 export GHCR_TOKEN=<token>
-export BE_TAG=sha-1a4837c     # backend — bản cài 17/11/2026
-export APP_TAG=sha-95f3e06    # giao diện — bản cài 17/11/2026
+BE_TAG=sha-1a4837c APP_TAG=sha-95f3e06   # phiên bản 17/11/2026 — có bản mới thì đổi (MAINTAINER.md)
+BASE=https://raw.githubusercontent.com/nguyentrucanhtuan/fnberp_deploy/main/install
+cd ~; curl -fsSL $BASE/erp.sh | bash -s -- --backend-tag $BE_TAG --app-tag $APP_TAG; curl -fsSL $BASE/db-moi.sh | bash
 ```
 
-Thay `<token>`. Có bản mới hơn thì đổi hai tag (xem [MAINTAINER.md](MAINTAINER.md)).
-
-### Bước 4 — Chạy bộ cài
-
-```bash
-cd ~ && curl -fsSL https://raw.githubusercontent.com/nguyentrucanhtuan/fnberp_deploy/main/install/erp.sh \
-  | bash -s -- --backend-tag "$BE_TAG" --app-tag "$APP_TAG"
-```
-
-Có tên miền thì thêm `--domain erp.tenquan.vn` vào cuối (DNS phải trỏ về máy trước).
-
-> ⚠️ **Trên máy mới, bước này sẽ báo đỏ ở đoạn "Khởi động" — đó là lỗi đã biết, làm tiếp bước 5.**
-> Bộ cài chưa dựng được database trắng với bản backend hiện tại. Bước 5 dựng tay.
-> Bước 4 chạy xanh tới dòng "TRCF ERP đã cài đặt xong" thì bỏ qua bước 5.
-
-### Bước 5 — Dựng database (chỉ máy mới)
-
-Dán **từng khối**, chờ khối trước chạy xong mới dán khối sau.
-
-**5a. Tạo bảng gốc** (chờ 1–3 phút):
-
-```bash
-cd ~/fnberp
-BACKEND_IMAGE_TAG=latest docker compose up -d --no-deps backend
-until docker compose logs backend 2>&1 | grep -q 'Backend đang chạy'; do sleep 5; echo "…chờ"; done
-docker compose exec -T postgres psql -U trcf -d trcf_erp -At -c 'select count(*) from migrations' </dev/null
-docker compose stop backend
-```
-
-Dòng số phải ra **`122`**. Khác thì dừng, gửi nhà cung cấp.
-
-**5b. Đặt múi giờ quán:**
-
-```bash
-docker compose exec -T postgres psql -U trcf -d trcf_erp -c \
-  "INSERT INTO system_settings (module, key, value, value_type, description) VALUES ('general','timezone','Asia/Ho_Chi_Minh','str','Múi giờ quán (IANA)')"
-```
-
-**5c. Sáu bước nâng cấu trúc** (mỗi lượt vài giây, phải in ✅):
-
-```bash
-for m in TimestamptzEverywhere1783741000000 BigintLargeTables1783741100000 \
-         AddShopIdColumns1783741200000 CompositeKeys1783741400000 \
-         ExternalRefsAndZaloAppShops1783741500000 TenantScopedUniques1783741600000; do
-  docker compose run --rm --no-deps backend node dist/oneway-migrate "$m" || { echo "⛔ DỪNG ở $m"; break; }
-done
-```
-
-**5d. Tạo vai database cho backend:**
-
-```bash
-DBPW=$(grep '^DB_PASSWORD=' .env | cut -d= -f2-)
-APP_PW=$(openssl rand -hex 24); BYP_PW=$(openssl rand -hex 24)
-docker compose run --rm --no-deps \
-  -e ADMIN_DATABASE_URL="postgresql://trcf:$DBPW@postgres:5432/trcf_erp" \
-  -e DB_APP_PASSWORD="$APP_PW" -e DB_BYPASS_PASSWORD="$BYP_PW" \
-  backend node dist/setup-db-roles \
-&& (umask 077; echo "BYP_PW=$BYP_PW" > ~/trcf-bypass.secret) \
-&& docker compose run --rm --no-deps \
-  -e DATABASE_URL="postgresql://trcf_app:$APP_PW@postgres:5432/trcf_erp" \
-  backend node dist/phase4-preflight \
-&& printf '\nDB_APP_USER=trcf_app\nDB_APP_PASSWORD=%s\n' "$APP_PW" >> .env \
-&& echo "✅ Xong 5d"
-```
-
-Phải thấy `✅ Xong 5d`. Mật khẩu vai quản trị cất ở `~/trcf-bypass.secret`.
-
-**5e. Chạy phần còn lại và bật hệ thống:**
-
-```bash
-docker compose run --rm --no-deps backend node dist/boot-migrate \
-&& docker compose run --rm --no-deps backend node dist/phase4-gate \
-&& docker compose up -d \
-&& echo "✅ Xong — chờ 1 phút rồi mở trình duyệt"
-```
-
-### Bước 6 — Kiểm tra và đăng nhập
-
-```bash
-cd ~/fnberp
-docker compose ps
-hostname -I | awk '{print "Mở trình duyệt: http://"$1}'
-grep '^ADMIN_SEED' .env
-```
-
-- `docker compose ps`: cả `caddy`, `postgres`, `backend`, `frontend_app` đều **Up**, có chữ `healthy`.
-- Mở địa chỉ in ra, đăng nhập bằng email + mật khẩu ở dòng `ADMIN_SEED_*` (mặc định
-  `admin@trcf.vn` / `1234567890@`). Đổi mật khẩu ngay trong mục Tài khoản.
+- Có tên miền: thêm `--domain erp.tenquan.vn` ngay sau `--app-tag $APP_TAG` (DNS phải trỏ về máy trước).
+- Phần `erp.sh` báo đỏ ở đoạn "Khởi động" là **bình thường** trên máy mới — phần `db-moi.sh` chạy
+  ngay sau sẽ dựng database rồi bật hệ thống. Đứt giữa chừng thì chạy lại
+  `curl -fsSL https://raw.githubusercontent.com/nguyentrucanhtuan/fnberp_deploy/main/install/db-moi.sh | bash`
+  (chạy lại không hại gì).
+- Đăng nhập bằng tài khoản in ra (mặc định `admin@trcf.vn` / `1234567890@`), **đổi mật khẩu ngay**.
+  Thông tin lưu ở `~/fnberp/thong-tin-dang-nhap.txt`.
 - Máy thu ngân, tablet bếp, điện thoại cùng wifi mở **cùng địa chỉ đó**.
 
 ### Lệnh thường dùng
