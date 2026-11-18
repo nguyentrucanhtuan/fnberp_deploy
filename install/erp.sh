@@ -5,6 +5,9 @@
 #   cd ~ && curl -fsSL https://raw.githubusercontent.com/nguyentrucanhtuan/fnberp_deploy/main/install/erp.sh \
 #     | GHCR_TOKEN=<token-nhà-cung-cấp-cấp> bash
 #
+# Máy MỚI (database chưa có bảng nào): script tự gọi install/db-moi.sh để dựng database
+# + dữ liệu mẫu rồi bật hệ thống — một lệnh là xong, không phải chạy gì thêm.
+#
 # YÊU CẦU: máy đã có Docker (chạy BƯỚC 1 trước — install/docker.sh).
 # Script này KHÔNG tự cài Docker; thiếu là báo lỗi kèm lệnh bước 1.
 #
@@ -28,8 +31,9 @@
 #   --admin-email a@b.vn      email quản trị (mặc định admin@trcf.vn)
 #   --admin-password 'xxx'    mật khẩu quản trị (mặc định theo quy ước nhà cung cấp)
 #   --http-port 8080          đổi cổng HTTP nếu 80 đã bị chiếm
-#   --app-tag sha-a1b2c3d     ảnh giao diện CHÍNH `trcf-erp-frontend` (trang chủ /)   — bắt buộc khi cài mới
-#   --backend-tag sha-a1b2c3d ảnh backend `trcf-erp-backend`                        — bắt buộc khi cài mới
+#   --app-tag sha-a1b2c3d     ảnh giao diện CHÍNH `trcf-erp-frontend` (trang chủ /)
+#   --backend-tag sha-a1b2c3d ảnh backend `trcf-erp-backend`
+#                             Cài mới không truyền ⇒ dùng DEFAULT_*_TAG ngay dưới (bản đã cài thật gần nhất).
 #                             (từ 11/11/2026 không ảnh nào cài mới được bằng `latest`: ảnh giao diện
 #                             không có `latest`, `latest` backend đóng băng từ 04/10). --update chỉ đổi
 #                             tag nào được truyền; không truyền thì giữ nguyên tag đang chạy.
@@ -56,6 +60,11 @@ HTTP_PORT="80"
 HTTPS_PORT="443"
 APP_IMAGE_TAG=""
 BACKEND_IMAGE_TAG=""
+# Phiên bản mặc định khi CÀI MỚI mà không truyền --app-tag/--backend-tag. Đổi hai dòng này
+# mỗi khi có bản mới đã chạy ổn ở một quán (MAINTAINER.md). --update KHÔNG dùng mặc định:
+# không truyền tag thì giữ nguyên tag quán đang chạy.
+DEFAULT_BACKEND_TAG="sha-1a4837c"   # NestJS — bản cài lại Quảng Trị 17/11/2026
+DEFAULT_APP_TAG="sha-95f3e06"
 UPDATE_ONLY="no"
 # Token có thể truyền qua biến môi trường (không lọt vào lịch sử lệnh / danh sách tiến trình).
 GHCR_TOKEN="${GHCR_TOKEN:-}"
@@ -97,6 +106,11 @@ case "${ID:-}${ID_LIKE:-}" in
   *) die "Chỉ hỗ trợ Ubuntu/Debian (máy này: ${PRETTY_NAME:-không rõ}). Với distro khác: cài Docker thủ công rồi chạy docker compose theo README." ;;
 esac
 ok "Hệ điều hành: ${PRETTY_NAME:-$ID}"
+
+case "$(uname -m)" in
+  x86_64|amd64) ok "Chip: $(uname -m)" ;;
+  *) die "Chip $(uname -m) chưa được hỗ trợ — phần mềm hiện chỉ có bản cho x86_64/amd64." ;;
+esac
 
 if [ "$(id -u)" -eq 0 ]; then
   SUDO=""
@@ -194,6 +208,8 @@ if [ -f .env ]; then
 else
   KEPT_ENV="no"
   [ -n "$ADMIN_PASSWORD" ] || ADMIN_PASSWORD="$ADMIN_PASSWORD_DEFAULT"
+  [ -n "$APP_IMAGE_TAG" ] || APP_IMAGE_TAG="$DEFAULT_APP_TAG"
+  [ -n "$BACKEND_IMAGE_TAG" ] || BACKEND_IMAGE_TAG="$DEFAULT_BACKEND_TAG"
   umask 077
   cat > .env <<EOF
 # TRCF ERP — sinh tự động bởi install/ubuntu.sh lúc $(date '+%F %T')
@@ -336,6 +352,32 @@ if ! $DOCKER compose pull --quiet 2>/tmp/trcf-pull-err; then
 fi
 rm -f /tmp/trcf-pull-err
 ok "Đã tải backend + frontend + postgres + caddy"
+
+# ── 6b. Máy MỚI ⇒ giao cho db-moi.sh ──────────────────────────────────────
+# Ảnh backend sau 055 không tự dựng được database trắng (README chi tiết). "Mới" = bảng
+# `migrations` CHƯA tồn tại, hoặc lần db-moi trước bỏ dở (còn tệp đánh dấu). Quán đang
+# chạy luôn có bảng `migrations` ⇒ không bao giờ rơi vào nhánh này.
+$DOCKER compose up -d postgres </dev/null >/dev/null 2>&1 || die "Không bật được postgres: cd $INSTALL_DIR && docker compose logs postgres"
+ENV_DBU="$({ grep -E '^DB_USER=' .env || true; } | tail -1 | cut -d= -f2-)"; ENV_DBU="${ENV_DBU:-trcf}"
+ENV_DBN="$({ grep -E '^DB_NAME=' .env || true; } | tail -1 | cut -d= -f2-)"; ENV_DBN="${ENV_DBN:-trcf_erp}"
+for i in $(seq 1 30); do
+  $DOCKER compose exec -T postgres pg_isready -U "$ENV_DBU" -d "$ENV_DBN" </dev/null >/dev/null 2>&1 && break
+  sleep 2
+done
+NO_MIG="$($DOCKER compose exec -T postgres psql -U "$ENV_DBU" -d "$ENV_DBN" -At \
+  -c "select to_regclass('public.migrations') is null" </dev/null 2>/dev/null || echo '?')"
+if [ "$NO_MIG" = "t" ] || [ -f .db-moi-chua-xong ]; then
+  step "Máy mới — dựng database + dữ liệu mẫu"
+  curl -fsSL "$RAW_BASE/install/db-moi.sh" -o /tmp/trcf-db-moi.sh \
+    || die "Không tải được install/db-moi.sh (kiểm tra mạng)."
+  RC=0; bash /tmp/trcf-db-moi.sh --dir "$INSTALL_DIR" </dev/null || RC=$?
+  rm -f /tmp/trcf-db-moi.sh
+  if [ "$NEED_RELOGIN" = "yes" ]; then
+    printf '  \033[1;33mĐăng xuất/đăng nhập lại (hoặc: newgrp docker) để dùng lệnh docker không cần sudo.\033[0m\n'
+  fi
+  exit $RC
+fi
+[ "$NO_MIG" = "f" ] || die "Không đọc được database để biết máy mới hay cũ. Xem: cd $INSTALL_DIR && docker compose logs postgres"
 
 # --remove-orphans: quán nâng cấp từ bản còn service `frontend` (v1, gỡ 12/11/2026)
 # thì container cũ đó dừng + xoá luôn, không treo lại chạy vô ích.

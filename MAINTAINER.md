@@ -17,9 +17,10 @@ phải làm một lần** để lệnh cài một dòng chạy được.
 - Cắm dây/wifi **cùng mạng** với máy thu ngân + tablet bếp
 - Đặt **IP tĩnh** (hoặc DHCP reservation ở router) — nếu không, mai IP đổi là mọi máy mất kết nối
 
-**③ Gửi khách lệnh cài** — chép nguyên [README.md](README.md) phần A (Bước 2 + Bước 3), điền
-sẵn token + hai tag `sha-…` mới nhất. Bước 3 gồm `erp.sh` rồi `install/db-moi.sh` (dựng DB trắng —
-bộ cài chưa tự làm được với ảnh sau 055; xoá `db-moi.sh` khỏi README khi đã vá `erp.sh`).
+**③ Gửi khách lệnh cài** — [README.md](README.md) phần A, hai lệnh: cài Docker, rồi `erp.sh`
+kèm token. Máy mới thì `erp.sh` tự gọi `install/db-moi.sh` dựng database trắng (ảnh backend
+sau 055 chưa tự làm được). **Có bản mới đã chạy ổn ở một quán ⇒ đổi `DEFAULT_BACKEND_TAG` /
+`DEFAULT_APP_TAG` đầu `install/erp.sh`** — đó là bản khách nhận khi cài mới.
 
 **④ Bàn giao**
 - Chỉ khách mở địa chỉ đó trên máy thu ngân / tablet / điện thoại (cùng wifi)

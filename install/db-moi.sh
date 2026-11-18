@@ -2,6 +2,8 @@
 # ═══════════════════════════════════════════════════════════════════════════
 # DỰNG DATABASE TRẮNG cho máy mới cài — chạy SAU install/erp.sh.
 #
+#   Tự chạy: install/erp.sh gọi script này khi database chưa có bảng `migrations`
+#   (hoặc còn tệp đánh dấu .db-moi-chua-xong của lần dở). Chạy tay cũng được:
 #   curl -fsSL https://raw.githubusercontent.com/nguyentrucanhtuan/fnberp_deploy/main/install/db-moi.sh | bash
 #
 # Vì sao có script này: bộ cài chưa dựng được DB trắng với ảnh backend sau 055 —
@@ -72,6 +74,8 @@ wait_backend_log() {  # chờ câu log backend đã lên, tối đa 10 phút
 }
 
 if ! grep -q '^DB_APP_USER=' .env; then
+  # Đánh dấu "đang dựng" — erp.sh chạy lại sẽ thấy tệp này và gọi tiếp db-moi.sh.
+  touch .db-moi-chua-xong
   # ── 0. Postgres phải chạy ──
   step "Bật Postgres"
   dc up -d postgres >/dev/null 2>&1 || die "Không bật được postgres: cd $INSTALL_DIR && docker compose logs postgres"
@@ -83,6 +87,12 @@ if ! grep -q '^DB_APP_USER=' .env; then
 
   # ── 1. 122 migration gốc bằng backend latest đóng băng ──
   MIG="$(sql "select count(*) from migrations" 2>/dev/null || echo 0)"
+  # Chốt an toàn: quán ĐANG BÁN (có đơn) không phải máy mới — migration một chiều ở quán
+  # thật phải đi quy trình cửa sổ có sao lưu + cửa kiểm (docs/README-CHI-TIET.md §7).
+  if [ "${MIG:-0}" -gt 0 ]; then
+    ORD="$(sql "select count(*) from orders" 2>/dev/null || echo 0)"
+    [ "${ORD:-0}" = 0 ] || { rm -f .db-moi-chua-xong; die "Database đã có $ORD đơn hàng — đây không phải máy mới. Dừng, không đụng gì."; }
+  fi
   if [ "${MIG:-0}" -lt 122 ]; then
     step "Tạo bảng gốc bằng bản backend cũ (1–3 phút)"
     # `sudo` xoá biến môi trường ⇒ truyền qua `env` SAU sudo.
@@ -141,7 +151,7 @@ if ! grep -q '^DB_APP_USER=' .env; then
     || { cat /tmp/trcf-boot.log >&2; die "boot-migrate hỏng"; }
   run backend node dist/phase4-gate >/tmp/trcf-gate.log 2>&1 \
     || { cat /tmp/trcf-gate.log >&2; die "phase4-gate không qua"; }
-  rm -f /tmp/trcf-boot.log /tmp/trcf-gate.log
+  rm -f /tmp/trcf-boot.log /tmp/trcf-gate.log .db-moi-chua-xong
   ok "Database đã sẵn sàng ($(sql "select count(*) from migrations") migration)"
 fi
 
@@ -156,6 +166,7 @@ for i in $(seq 1 60); do
 done
 dc ps --format '  {{.Service}}  {{.Status}}'
 [ "$READY" = "yes" ] || die "Quá 5 phút chưa healthy. Xem: cd $INSTALL_DIR && docker compose logs --tail 100 backend"
+rm -f .db-moi-chua-xong
 
 # ── 7. In thông tin ──
 URL="$(envv APP_URL)"; EMAIL="$(envv ADMIN_SEED_EMAIL)"; PASS="$(envv ADMIN_SEED_PASSWORD)"

@@ -1,7 +1,7 @@
 # TRCF ERP — Cài đặt
 
 Hai phần: **A. Cài ERP** (máy chủ của quán) · **B. Cài Bridge** (máy quầy có máy in USB).
-Mỗi bước là một khối lệnh, dán nguyên khối vào terminal.
+Mỗi bước là một lệnh, dán vào terminal.
 
 Bản đầy đủ (sao lưu, migration, xử lý sự cố, lịch sử): [docs/README-CHI-TIET.md](docs/README-CHI-TIET.md).
 
@@ -9,45 +9,31 @@ Bản đầy đủ (sao lưu, migration, xử lý sự cố, lịch sử): [docs
 
 ## A. Cài ERP
 
-Cần: Ubuntu 22.04/24.04 · chip x86_64 · 2 CPU · 4 GB RAM · 20 GB đĩa · tài khoản `root` hoặc có `sudo`
+Cần: Ubuntu 22.04/24.04 · chip x86_64 (bộ cài tự kiểm) · 2 CPU · 4 GB RAM · 20 GB đĩa · tài khoản `root` hoặc có `sudo`
 · token do nhà cung cấp cấp. Nên đặt IP tĩnh cho máy (hoặc DHCP reservation ở router).
 
-### Bước 1 — Kiểm tra chip
+### Bước 1 — Cài Docker
 
 ```bash
-uname -m
+curl -fsSL https://raw.githubusercontent.com/nguyentrucanhtuan/fnberp_deploy/main/install/docker.sh | bash && newgrp docker
 ```
 
-Phải ra `x86_64`. Ra `aarch64`/`arm64` thì dừng: chưa có bản cho chip ARM.
+### Bước 2 — Cài ERP
 
-### Bước 2 — Cài Docker
+Thay `<token>` rồi dán. Chờ 5–10 phút, cuối cùng màn hình in địa chỉ, tài khoản, mật khẩu.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/nguyentrucanhtuan/fnberp_deploy/main/install/docker.sh | bash
-newgrp docker
+cd ~ && curl -fsSL https://raw.githubusercontent.com/nguyentrucanhtuan/fnberp_deploy/main/install/erp.sh | GHCR_TOKEN=<token> bash
 ```
 
-Máy đã có Docker thì script tự bỏ qua.
+Xong. Hệ thống có sẵn kho tổng + kho quầy, 3 phương thức thanh toán, Quầy chính, cấu hình kho/quỹ,
+phòng ban + hồ sơ Quản lý.
 
-### Bước 3 — Cài ERP
-
-Thay `<token>` rồi dán cả khối. Chờ 5–10 phút, cuối cùng màn hình in địa chỉ, tài khoản và mật khẩu.
-
-```bash
-export GHCR_TOKEN=<token>
-BE_TAG=sha-1a4837c APP_TAG=sha-95f3e06   # phiên bản 17/11/2026 — có bản mới thì đổi (MAINTAINER.md)
-BASE=https://raw.githubusercontent.com/nguyentrucanhtuan/fnberp_deploy/main/install
-cd ~; curl -fsSL $BASE/erp.sh | bash -s -- --backend-tag $BE_TAG --app-tag $APP_TAG; curl -fsSL $BASE/db-moi.sh | bash
-```
-
-- Có tên miền: thêm `--domain erp.tenquan.vn` ngay sau `--app-tag $APP_TAG` (DNS phải trỏ về máy trước).
-- Phần `erp.sh` báo đỏ ở đoạn "Khởi động" là **bình thường** trên máy mới — phần `db-moi.sh` chạy
-  ngay sau sẽ dựng database rồi bật hệ thống. Đứt giữa chừng thì chạy lại
-  `curl -fsSL https://raw.githubusercontent.com/nguyentrucanhtuan/fnberp_deploy/main/install/db-moi.sh | bash`
-  (chạy lại không hại gì).
 - Đăng nhập bằng tài khoản in ra (mặc định `admin@trcf.vn` / `1234567890@`), **đổi mật khẩu ngay**.
   Thông tin lưu ở `~/fnberp/thong-tin-dang-nhap.txt`.
 - Máy thu ngân, tablet bếp, điện thoại cùng wifi mở **cùng địa chỉ đó**.
+- Có tên miền: thêm `bash -s -- --domain erp.tenquan.vn` thay cho `bash` ở cuối lệnh (DNS phải trỏ về máy trước).
+- Đứt giữa chừng: chạy lại đúng lệnh trên, nó làm tiếp phần còn dở.
 
 ### Lệnh thường dùng
 
@@ -79,7 +65,7 @@ Bridge chỉ dành cho máy in **chỉ có cổng USB**, và máy quầy cắm m
 
 ### Bước 1 — Cắm máy in USB vào máy quầy, bật nguồn
 
-Máy quầy chưa có Docker thì chạy bước A2 (cài Docker) trước.
+Máy quầy chưa có Docker thì chạy bước A1 (cài Docker) trước.
 
 ### Bước 2 — Cài Bridge
 
