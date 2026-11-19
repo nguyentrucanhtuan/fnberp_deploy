@@ -57,57 +57,109 @@ cd ~ && curl -fsSL https://raw.githubusercontent.com/nguyentrucanhtuan/fnberp_de
 
 ## B. Cài Bridge (máy in USB)
 
-Máy in có **cổng mạng (LAN)** thì **không cần Bridge**: vào ERP → **Máy in** → Thêm → kết nối **mạng**
-→ nhập IP máy in + cổng `9100`. Xong.
+Khoảng 15 phút, ai cũng làm được. Cần: máy in (bill và/hoặc tem) · bàn phím cắm vào máy quầy ·
+**mật khẩu đăng nhập máy tính quầy** · tài khoản quản trị ERP.
 
-Bridge chỉ dành cho máy in **chỉ có cổng USB**, và máy quầy cắm máy in phải chạy **Linux**
-(Windows/macOS chưa hỗ trợ máy in USB).
+> Máy in có **cổng mạng (dây LAN)** thì **không cần Bridge**: ERP → **Máy in** → **Thêm máy in** →
+> Loại kết nối **Mạng LAN** → nhập IP máy in, cổng `9100`. Xong.
+>
+> Bridge dành cho máy in **chỉ có cổng USB**, máy quầy cắm máy in phải chạy **Linux**
+> (Windows/macOS chưa hỗ trợ máy in USB). Cài ERP (phần A) **không** cài Bridge — ERP chỉ mở sẵn
+> cửa `/bridge/*` để Bridge gọi vào.
 
-### Bước 1 — Cắm máy in USB vào máy quầy, bật nguồn
+### Bước 1 — Cắm máy in
 
-Máy quầy chưa có Docker thì chạy bước A1 (cài Docker) trước.
+1. Cắm **dây USB** của máy in vào máy quầy.
+2. Cắm điện, **bật công tắc**, chờ đèn sáng.
+3. Có máy in thứ hai (tem, bếp) thì cắm luôn.
 
-### Bước 2 — Cài Bridge
+### Bước 2 — Cài chương trình in (mỗi máy quầy làm 1 lần)
+
+1. Bấm cùng lúc **Ctrl + Alt + T** → hiện cửa sổ nền đen (terminal). Cứ để mở tới hết.
+2. Gõ hoặc dán (**Ctrl + Shift + V**) rồi Enter:
+
+   ```bash
+   cd ~ && curl -fsSL https://raw.githubusercontent.com/nguyentrucanhtuan/fnberp_deploy/main/install/bridge.sh | sudo -E bash
+   ```
+
+3. Máy hỏi mật khẩu → gõ mật khẩu máy tính rồi Enter. **Lúc gõ màn hình không hiện gì — bình thường.**
+4. Chờ khoảng 1 phút, thấy chữ xanh **"CÀI XONG"** là được.
+
+> Máy quầy **chưa cài ERP** (máy in cắm ở máy khác máy chủ): chạy Bước 1 của phần A (cài Docker)
+> trước, và thêm token vào lệnh: `... | GHCR_TOKEN=<token> sudo -E bash`. Không có token thì hỏi nhà cung cấp.
+
+### Bước 3 — Tắt trình in có sẵn của Linux
+
+Trình in của Linux (CUPS) hay **giành** máy in nhiệt, làm Bridge không thấy máy:
 
 ```bash
-cd ~ && curl -fsSL https://raw.githubusercontent.com/nguyentrucanhtuan/fnberp_deploy/main/install/bridge.sh \
-  | GHCR_TOKEN=<token> sudo -E bash
+sudo systemctl mask --now cups cups.socket cups.path cups-browsed
 ```
 
-Máy đã cài ERP thì bỏ `GHCR_TOKEN=<token>` cũng được.
+⚠️ Máy quầy này còn dùng **in giấy A4** (máy in văn phòng) thì **bỏ qua** lệnh này và báo nhà cung cấp.
+Muốn bật lại: `sudo systemctl unmask cups cups.socket cups.path cups-browsed`.
 
-### Bước 3 — Kiểm tra máy in đã nhận
+### Bước 4 — Kiểm tra máy in đã nhận
 
 ```bash
 trcf-bridge list
 ```
 
-Không thấy máy in nào:
+Thấy tên máy in là đúng. Báo **"Không thấy máy in USB nào"** → kiểm dây + công tắc, rút USB cắm lại,
+chờ 10 giây, gõ lại.
 
-```bash
-sudo systemctl disable --now cups cups-browsed
-```
+### Bước 5 — Khai máy in trên ERP
 
-rồi rút cắm lại dây USB, chạy lại bước 2.
+1. Mở trình duyệt, gõ **`localhost`** → Enter (máy in cắm ở máy khác máy chủ thì gõ IP máy chủ ERP).
+   Đăng nhập quản trị.
+2. Vào **Cài đặt cửa hàng → Máy in**.
+3. Đã có sẵn dòng cho máy in này thì **bỏ qua**, sang Bước 6.
+4. Chưa có → **Thêm máy in**:
+   - **Tên thiết bị:** dễ nhận, vd `MÁY IN BILL QUẦY`
+   - **Loại kết nối:** **USB**
+   - **Loại máy in:** **Hoá đơn** (máy bill) · **Nhãn dán (Label)** (máy tem) · **Phiếu yêu cầu món** (máy bếp)
+   - Máy bill: khổ giấy **80** hoặc **58** mm · Máy tem: **rộng × cao của CON TEM** (đo một con tem, không đo cuộn)
+   - **Lưu**
 
-### Bước 4 — Lấy mã ghép trên ERP
+### Bước 6 — Ghép máy in (lần lượt TỪNG máy một)
 
-ERP → **Máy in** → **Thêm máy in** → kết nối **USB** → Lưu → menu **⋯** ở dòng vừa tạo →
-**Lấy mã ghép**. Được mã 6 số, **dùng trong 10 phút**.
+1. Trên ERP, chạm dòng máy in → **Lấy mã ghép**.
+2. Hiện câu lệnh có mã 6 số → bấm **Chép câu lệnh**. ⏱ Mã sống **10 phút**, dùng một lần.
+3. Sang cửa sổ đen, dán (**Ctrl + Shift + V**) → Enter. Hỏi mật khẩu thì gõ mật khẩu máy tính.
+   Câu lệnh có dạng:
 
-### Bước 5 — Ghép và bật chạy nền
+   ```bash
+   sudo trcf-bridge pair --server http://localhost --code <mã-6-số>
+   ```
 
-```bash
-sudo trcf-bridge pair --server http://localhost --code <mã-6-số>
-docker compose -f /opt/trcf-bridge/docker-compose.yml up -d
-```
+4. Thành công → **máy in nhả một tờ thử**.
+5. Báo **"có nhiều máy in, hãy chỉ rõ bằng --device"** kèm vài dòng `--device /dev/usb/lp…`:
+   - bấm **mũi tên lên** để hiện lại câu lệnh vừa dán,
+   - thêm vào cuối đúng `--device /dev/usb/lp…` của dòng có tên máy đang ghép
+     (máy bill thường có chữ **POS**/**Printer**, máy tem có chữ **LABEL**),
+     vd `sudo trcf-bridge pair --server http://localhost --code 123456 --device /dev/usb/lp1`
+   - Enter.
+6. Còn máy in khác → quay lại mục 1 với **dòng máy in đó**, mỗi máy **một mã mới**.
 
 - Máy in cắm ở **chính máy chủ ERP**: giữ `http://localhost` (không thêm `:3333`).
-- Máy in cắm ở **máy khác**: thay bằng địa chỉ ERP, ví dụ `http://192.168.1.50`.
+- Máy in cắm ở **máy khác**: thay bằng địa chỉ ERP, vd `http://192.168.1.50`.
 
-Máy in ra một tờ thử. Trên ERP, cột **Kết nối in** chuyển sang **"Đang chạy"** là xong.
+### Bước 7 — Bật chạy nền (1 lần, sau khi ghép xong hết)
 
-**Thêm máy in thứ hai** (bếp, tem): cắm vào → chạy lại bước 2 → lặp bước 4–5 với mã mới.
+```bash
+sudo docker compose -f /opt/trcf-bridge/docker-compose.yml up -d
+```
+
+Thấy **Started**/**Running** là xong, đóng cửa sổ đen. Máy tính khởi động lại thì Bridge tự chạy.
+
+### Bước 8 — Kiểm tra
+
+1. ERP → **Máy in**: cột **Kết nối in** của mọi máy là **"Đang chạy"**.
+2. Tạo một đơn có món nước, thanh toán → bill ra ở máy bill, tem ra ở máy tem.
+3. Xem chữ tiếng Việt có dấu, giấy tự cắt, ngăn kéo tiền bật.
+
+**Thêm máy in sau này** (bếp, tem): cắm vào → Bước 4–6 với mã mới → không phải cài lại Bridge
+(nó tự dò thiết bị mới).
 
 ### Cập nhật Bridge / máy in đổi cổng
 
@@ -120,15 +172,16 @@ Giữ nguyên liên kết, không phải ghép lại.
 
 ### Lỗi hay gặp
 
-| Báo lỗi | Làm |
+| Thấy gì | Làm gì |
 |---|---|
-| Mã ghép sai / hết hạn | Lấy mã mới. Mã dùng một lần, chỉ mã mới nhất còn dùng được. |
-| Không gọi được ERP | Sai `--server`. Dùng `http://localhost` hoặc IP máy chủ, không kèm `:3333`. |
-| Máy in đang do máy khác cầm | ERP → Máy in → **⋯** → *Thu hồi chương trình in* → ghép lại. |
-| In được nhưng ngăn kéo tiền không bật | Ghép lại kèm `--drawer-pin 1`. |
+| Mã ghép sai / hết hạn | Lấy mã mới trên ERP, dán lại lệnh. Chỉ mã mới nhất còn dùng được. |
+| Không gọi được ERP | Sai `--server`. Dùng `http://localhost` hoặc `http://<IP máy chủ>`, **không** kèm `:3333`. |
+| Máy in đang do máy khác cầm | ERP → Máy in → chạm dòng đó → *Thu hồi chương trình in* → ghép lại (Bước 6). |
+| In được nhưng ngăn kéo tiền không bật | Ghép lại máy bill, thêm ` --drawer-pin 1` vào cuối lệnh. |
+| Tem lệch, giấy chạy liên tục | Khai sai khổ tem → ERP sửa máy in tem, nhập đúng rộng × cao **con tem**. |
 
-Gửi nhà cung cấp khi cần hỗ trợ:
+Lỗi khác — gõ lệnh sau, chụp màn hình gửi nhà cung cấp:
 
 ```bash
-trcf-bridge version; trcf-bridge list; docker compose -f /opt/trcf-bridge/docker-compose.yml logs --tail 100
+trcf-bridge version; trcf-bridge list; sudo docker compose -f /opt/trcf-bridge/docker-compose.yml logs --tail 100
 ```
