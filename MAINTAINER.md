@@ -99,6 +99,7 @@ Không cần làm gì trên GitHub — package mặc định private. **Đừng*
 | `trcf-erp-frontend-v1` | repo `trcf_erp_frontend_v1` (giao diện CŨ, `/v1`), push `main` — từ 11/11/2026 |
 | ~~`trcf-erp-frontend-app`~~ | ngừng đẩy từ 11/11/2026 (đổi thành `trcf-erp-frontend`); sha cũ còn kéo được |
 | **`trcf-bridge`** | repo `trcf_bridge`, push `main` (thêm 2026-08) |
+| **`trcf-erp-backend-go`** | repo `trcf_erp_backend_golang`, job `publish` trong `ci.yml` khi push `main` xanh (thêm 20/11/2026). CHỈ tag `sha-<short>`, không `latest` — xem §7 |
 
 **Vì sao chương trình in cũng đi qua GHCR:** repo agent private và `dist/` bị gitignore, nên quán
 không có đường nào `curl` binary về. Đẩy ảnh lên GHCR thì họ dùng **đúng token đã cấp lúc cài
@@ -288,3 +289,32 @@ Dùng dạng `GHCR_TOKEN=` (biến môi trường) thay vì `--ghcr-token` — t
 `~/.bash_history` và không hiện trong `ps` của người dùng khác trên máy.
 
 Nên gửi qua kênh riêng (Zalo cá nhân/email), **không** đăng lên nhóm chat chung.
+
+---
+
+## 7. Bộ backend Go — chạy song song bộ NestJS (thêm 20/11/2026)
+
+Spec: [`specs/061-go-backend/deltas/deploy-go.md`](../specs/061-go-backend/deltas/deploy-go.md) (umbrella). **Chưa giao khách** —
+ngày chuyển quán là story 620.5, sau khi qua 620.2 (so 428 route) + 620.3 (chạy thử toàn hệ) + 620.4 (diễn tập).
+
+| | NestJS (mặc định) | Go |
+|---|---|---|
+| Compose | `docker-compose.yml` | `docker-compose.go.yml` |
+| Lệnh | `install/erp.sh` | `install/deploy-go.sh --go-tag sha-<commit>` |
+| Ảnh backend | `trcf-erp-backend:${BACKEND_IMAGE_TAG}` | `trcf-erp-backend-go:${GO_BACKEND_IMAGE_TAG}` |
+| Migrate | backend tự chạy lúc boot (cổng sao lưu 551.1) | script: `pg_dump` → `migrate bootstrap` → `up` → `seed-shop` → `setup-db-roles` |
+| Secret token | `JWT_SECRET`, hạn `JWT_EXPIRES` (7d) | `JWT_SECRET_GO`, hạn `JWT_EXPIRES_GO` (mặc định 8h, ADR-4) |
+
+- Hai tệp cùng tên project + cùng volume ⇒ **chỉ một backend chạy**. Service vẫn tên `backend` ⇒ `Caddyfile` dùng chung.
+- `deploy-go.sh` ghi `COMPOSE_FILE=docker-compose.go.yml` vào `.env` ⇒ `docker compose ps/logs/restart` gõ tay trong
+  `~/fnberp` tự nhắm bộ Go. Script cũng lưu một bản chính nó ở `~/fnberp/deploy-go.sh` để gọi lùi.
+- **Lùi:** `bash ~/fnberp/deploy-go.sh --rollback` — xoá `COMPOSE_FILE`, bật lại bộ NestJS. Database giữ nguyên
+  (NestJS bỏ qua `goose_db_version`); hỏng dữ liệu thì khôi phục bản dump ở `~/fnberp/backups-go/` (script in lệnh).
+- **Đầu vào bắt buộc:** database NestJS đứng đúng migration 157 (`CreateAttendanceGpsPunches1783744100000`). Go nâng
+  baseline thì sửa cả hai hằng `NEST_LAST_MIGRATION`/`NEST_MIGRATION_COUNT` đầu script.
+- **Bẫy đã chặn:** `.env` quán có `R2_ACCOUNT_ID` (sao lưu NestJS) — compose Go cố ý KHÔNG truyền `R2_*`, nếu không Go
+  bật driver ảnh R2 và từ chối khởi động vì thiếu `R2_BUCKET`. Container Go chạy uid `100:101` (= user `app` của ảnh
+  NestJS) để hai bên ghi được ảnh của nhau trong volume `uploads`.
+- **Go chưa có:** AI marketing (`brand_marketing`/Gemini); cổng sao lưu tự động trong backend (script lo dump).
+- `erp.sh --update` chạy trên máy đang ở Go sẽ làm việc với bộ Go (vì `COMPOSE_FILE`) — muốn về NestJS thì `--rollback` trước.
+

@@ -1,0 +1,164 @@
+# ─────────────────────────────────────────────────────────────────────────
+# TRCF ERP — BỘ BACKEND GO (delta 061 deploy-go). Chạy SONG SONG với bộ NestJS trong repo này:
+#
+#   docker-compose.yml      → backend NestJS (mặc định, install/erp.sh)
+#   docker-compose.go.yml   → backend Go      (install/deploy-go.sh)
+#
+# KHÔNG `up` tệp này bằng tay: install/deploy-go.sh dừng NestJS, sao lưu, bootstrap + migrate, rồi mới bật.
+# Script ghi `COMPOSE_FILE=docker-compose.go.yml` vào .env ⇒ mọi lệnh `docker compose …` sau đó trong thư mục cài
+# tự nhắm tệp này. Lùi về NestJS: `bash install/deploy-go.sh --rollback`.
+#
+# Cùng tên project + cùng volume với bộ NestJS ⇒ tại một thời điểm chỉ MỘT backend chạy. Service backend vẫn tên
+# `backend` ⇒ Caddyfile và frontend (API_URL=http://backend:3333) dùng chung, không sửa.
+# Dữ liệu ở volume "pgdata" — ĐỪNG dùng `down -v`.
+# ─────────────────────────────────────────────────────────────────────────
+name: trcf-erp
+
+# Ảnh Go ghim sha bất biến (không có `latest`): quên đặt ⇒ kéo `chua-dat-GO_BACKEND_IMAGE_TAG` và lỗi rõ ràng.
+x-go-image: &go-image ghcr.io/nguyentrucanhtuan/trcf-erp-backend-go:${GO_BACKEND_IMAGE_TAG:-chua-dat-GO_BACKEND_IMAGE_TAG}
+
+# Chuỗi VAI CHỦ — chỉ go_migrate + go_seed cầm, api KHÔNG BAO GIỜ thấy.
+x-owner-url: &owner-url postgresql://${DB_USER:-trcf}:${DB_PASSWORD:?DB_PASSWORD bắt buộc}@postgres:5432/${DB_NAME:-trcf_erp}
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      frontend_app:
+        condition: service_healthy
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:-:80}
+      # `:-` có chủ ý — xem chú thích cùng biến trong docker-compose.yml (khai rỗng = Caddy chặn sạch Zalo).
+      ZALO_ALLOWED_IPS: ${ZALO_ALLOWED_IPS:-0.0.0.0/0 ::/0}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:-trcf}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD bắt buộc — đặt trong .env}
+      POSTGRES_DB: ${DB_NAME:-trcf_erp}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-trcf} -d ${DB_NAME:-trcf_erp}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  # ── Lệnh một lần: deploy-go.sh gọi tường minh `run --rm go_migrate bootstrap|up` (KHÔNG chạy theo `up`) ──
+  go_migrate:
+    image: *go-image
+    pull_policy: missing
+    profiles: ["tools"]
+    entrypoint: ["/migrate"]
+    command: ["status"]
+    environment:
+      MIGRATION_DATABASE_URL: *owner-url
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  # Gieo permissions ⊇ catalog + nhóm mẫu cho mọi quán. Idempotent, CHỈ THÊM.
+  go_seed:
+    image: *go-image
+    pull_policy: missing
+    profiles: ["tools"]
+    entrypoint: ["/seed-shop"]
+    environment:
+      MIGRATION_DATABASE_URL: *owner-url
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  # Dựng/ghép vai trcf_app (chỉ DML, RLS FORCE) + trcf_bypass bằng ĐÚNG mật khẩu trong .env ⇒ NestJS lùi về vẫn nối được.
+  go_roles:
+    image: *go-image
+    pull_policy: missing
+    profiles: ["tools"]
+    entrypoint: ["/setup-db-roles"]
+    environment:
+      ADMIN_DATABASE_URL: *owner-url
+      DB_APP_ROLE: ${DB_APP_USER:-trcf_app}
+      DB_APP_PASSWORD: ${DB_APP_PASSWORD:?DB_APP_PASSWORD bắt buộc — deploy-go.sh tự sinh}
+      DB_BYPASS_PASSWORD: ${DB_BYPASS_PASSWORD:?DB_BYPASS_PASSWORD bắt buộc — deploy-go.sh tự sinh}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  # ── API Go: KHÔNG migrate lúc boot (deploy-go.sh lo), từ chối khởi động nếu cầm vai chủ/bypass ──
+  backend:
+    image: *go-image
+    # Tag sha bất biến ⇒ `missing` đủ (khác NestJS `always`), và diễn tập được bằng ảnh dựng tại máy.
+    pull_policy: missing
+    restart: unless-stopped
+    # CÙNG uid/gid với user `app` của ảnh NestJS: hai backend dùng chung volume `uploads`, lùi qua lại vẫn ghi được ảnh
+    # của nhau. Ảnh distroless tĩnh chạy được dưới uid bất kỳ.
+    user: "100:101"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # Không publish cổng — xem chú thích cùng chỗ trong docker-compose.yml (mở cổng = đi vòng Caddy, phá rào tần suất).
+    stop_grace_period: 20s # api tắt êm tối đa 15 s
+    environment:
+      PORT: "3333"
+      DATABASE_URL: postgresql://${DB_APP_USER:-trcf_app}:${DB_APP_PASSWORD:?DB_APP_PASSWORD bắt buộc}@postgres:5432/${DB_NAME:-trcf_erp}
+      DATABASE_URL_DIRECT: postgresql://${DB_APP_USER:-trcf_app}:${DB_APP_PASSWORD:?DB_APP_PASSWORD bắt buộc}@postgres:5432/${DB_NAME:-trcf_erp}
+      # ADR-4: secret RIÊNG của Go (khác JWT_SECRET của NestJS). Hạn token mặc định 8h — KHÔNG lấy JWT_EXPIRES=7d của NestJS.
+      JWT_SECRET: ${JWT_SECRET_GO:?JWT_SECRET_GO bắt buộc — deploy-go.sh tự sinh}
+      JWT_EXPIRES: ${JWT_EXPIRES_GO:-8h}
+      APP_URL: ${APP_URL:-http://localhost}
+      TRUST_PROXY: ${TRUST_PROXY-}
+      # Go đọc CORS_ORIGINS; .env của quán khai tên NestJS CORS_ALLOWED_ORIGINS.
+      CORS_ORIGINS: ${CORS_ALLOWED_ORIGINS-}
+      WS_ALLOWED_ORIGINS: ${WS_ALLOWED_ORIGINS-}
+      MAIL_DRIVER: ${MAIL_DRIVER:-log}
+      MAIL_FROM: ${MAIL_FROM:-onboarding@resend.dev}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      ZALO_APP_SECRET: ${ZALO_APP_SECRET:-}
+      ZALO_CHECKOUT_API_BASE: ${ZALO_CHECKOUT_API_BASE-}
+      UPLOADS_DIR: /app/uploads
+      UPLOADS_BASE_URL: ${UPLOADS_BASE_URL-}
+      # ⚠️ CỐ Ý KHÔNG truyền R2_*: .env của quán có R2_ACCOUNT_ID cho sao lưu NestJS; Go thấy biến này là bật driver ẢNH
+      # R2, thiếu R2_BUCKET thì từ chối khởi động. Ảnh vẫn ở volume `uploads` như NestJS.
+    volumes:
+      - uploads:/app/uploads
+    # HEALTHCHECK lấy từ ảnh (/healthcheck gọi /healthz, ping DB).
+
+  frontend_app:
+    image: ghcr.io/nguyentrucanhtuan/trcf-erp-frontend:${APP_IMAGE_TAG:-chua-dat-APP_IMAGE_TAG}
+    pull_policy: always
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      API_URL: http://backend:3333
+      AUTH_SECRET: ${AUTH_SECRET:?AUTH_SECRET bắt buộc — openssl rand -hex 32}
+      AUTH_TRUST_HOST: "true"
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:3000/',r=>process.exit(r.statusCode<500?0:1)).on('error',()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+volumes:
+  pgdata:
+  uploads:
+  # Khai để trùng tập volume với bộ NestJS (`--remove-orphans` không đụng volume, nhưng giữ cho rõ).
+  backups:
+  caddy_data:
+  caddy_config:
